@@ -147,6 +147,17 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var readCursor int64
+	if err := s.db.SQL.QueryRowContext(r.Context(), `
+		SELECT COALESCE(MAX(id),0)
+		FROM mail
+		WHERE sender=? AND uid=? AND id<=? AND read<>0`,
+		uid, request.Peer, through).Scan(&readCursor); err != nil {
+		fail(w, 500, "寄件已读状态暂时无法读取")
+		return
+	}
+	page.Read = readCursor
+
 	query := `
 		SELECT id, uid, sender, kind, COALESCE(text,''), COALESCE(items_json,''),
 		       COALESCE(created_ts,0), read
@@ -205,10 +216,9 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
+		// All player-to-player mails use MailboxItemTypes.Message in the game
+		// protocol; attachments are represented by Meta.Items, not a new type.
 		mailType := "message"
-		if mail.Kind != 0 {
-			mailType = "item"
-		}
 		status := uint32(0)
 		if mail.Read != 0 {
 			status = 1
