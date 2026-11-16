@@ -187,6 +187,15 @@ func TestNativeSentMailPagesSentMessagesAndAttachments(t *testing.T) {
 		}
 	}
 
+	// Claiming the attachment clears the inbox payload; deleting the inbox row
+	// must not erase the independent sent-mail archive.
+	if _, err := db.SQL.Exec(`UPDATE mail SET items_json=NULL, attachment_snapshot_version=0, read=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`DELETE FROM mail WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+
 	s := New(db, func(string) int64 { return 42 })
 	login := httptest.NewRequest("POST", "https://game.test/portal/api/session", strings.NewReader("{}"))
 	login.RemoteAddr = "192.0.2.1:1000"
@@ -232,7 +241,7 @@ func TestNativeSentMailPagesSentMessagesAndAttachments(t *testing.T) {
 	}
 	oldest := messagePage.Messages[1]
 	if oldest.Sequence != 1 || oldest.Item.Meta.ID != "00000000000000000000000000000001" ||
-		oldest.Item.Meta.Type != "message" || oldest.Item.Meta.Created != 1700000001 ||
+		oldest.Item.Meta.Type != "message" || oldest.Item.Meta.Created != 1700000001 || oldest.Item.Status != 1 ||
 		len(oldest.Item.Meta.Items) != 1 || oldest.Item.Meta.Items[0].ID != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
 		oldest.Item.Meta.Items[0].SysID != "AV_shamp_1lg" || oldest.Item.Meta.Items[0].Count != 2 {
 		t.Fatalf("attachment message mapping mismatch: %+v", oldest)
