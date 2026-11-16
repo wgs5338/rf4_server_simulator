@@ -222,7 +222,7 @@ func TestNativeSentMailPagesSentMessagesAndAttachments(t *testing.T) {
 	if messageResponse.Code != 200 || json.Unmarshal(messageResponse.Body.Bytes(), &messagePage) != nil {
 		t.Fatalf("message page invalid: %d %s", messageResponse.Code, messageResponse.Body.String())
 	}
-	if messagePage.Peer != 43 || messagePage.HasMore || len(messagePage.Messages) != 2 {
+	if messagePage.Peer != 43 || messagePage.Read != 2 || messagePage.HasMore || len(messagePage.Messages) != 2 {
 		t.Fatalf("message page count/cursor mismatch: %+v", messagePage)
 	}
 	newest := messagePage.Messages[0]
@@ -232,7 +232,7 @@ func TestNativeSentMailPagesSentMessagesAndAttachments(t *testing.T) {
 	}
 	oldest := messagePage.Messages[1]
 	if oldest.Sequence != 1 || oldest.Item.Meta.ID != "00000000000000000000000000000001" ||
-		oldest.Item.Meta.Type != "item" || oldest.Item.Meta.Created != 1700000001 ||
+		oldest.Item.Meta.Type != "message" || oldest.Item.Meta.Created != 1700000001 ||
 		len(oldest.Item.Meta.Items) != 1 || oldest.Item.Meta.Items[0].ID != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
 		oldest.Item.Meta.Items[0].SysID != "AV_shamp_1lg" || oldest.Item.Meta.Items[0].Count != 2 {
 		t.Fatalf("attachment message mapping mismatch: %+v", oldest)
