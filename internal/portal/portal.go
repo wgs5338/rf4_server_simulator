@@ -43,6 +43,7 @@ func New(db *store.DB, resolve func(string) int64) *Server {
 	s.mux.HandleFunc("GET /portal/api/profile", s.profile)
 	s.mux.HandleFunc("GET /portal/api/membership", s.membership)
 	s.mux.HandleFunc("POST /portal/api/membership/purchase", s.purchase)
+	s.mux.HandleFunc("POST /portal/api/native-sent-mail", s.nativeSentMail)
 	s.mux.HandleFunc("/portal/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, 404, "接口不存在") })
 	files, _ := fs.Sub(assets, "web")
 	s.mux.Handle("/portal/", http.StripPrefix("/portal/", http.FileServer(http.FS(files))))
