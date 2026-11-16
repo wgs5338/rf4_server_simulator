@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -165,23 +164,6 @@ func (s *Server) membership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, state)
-}
-
-// nativeSentMail is the v154 launcher compatibility route. The launcher posts a
-// paged native-mail request here using the same device-bound bearer session as
-// the player portal. The wire schema for native sent-mail entries is not yet
-// established, so return an empty page rather than inventing entry fields.
-func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.identity(w, r); !ok {
-		return
-	}
-	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	var request json.RawMessage
-	if err := d.Decode(&request); err != nil && err != io.EOF {
-		fail(w, 400, "寄件记录请求无效")
-		return
-	}
-	write(w, map[string]any{"items": []any{}})
 }
 
 func (s *Server) purchase(w http.ResponseWriter, r *http.Request) {
