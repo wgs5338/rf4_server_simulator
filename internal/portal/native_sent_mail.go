@@ -92,7 +92,7 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 	// pages carry the same through cursor so newly sent mail cannot shift pages.
 	var maxID int64
 	if err := s.db.SQL.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(id),0) FROM mail WHERE sender=?`, uid).Scan(&maxID); err != nil {
+		`SELECT COALESCE(MAX(message_id),0) FROM sent_mail WHERE sender=?`, uid).Scan(&maxID); err != nil {
 		fail(w, 500, "寄件记录暂时无法读取")
 		return
 	}
@@ -110,10 +110,10 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 
 	if request.Peer == 0 {
 		rows, err := s.db.SQL.QueryContext(r.Context(), `
-			SELECT DISTINCT uid
-			FROM mail
-			WHERE sender=? AND id<=? AND uid>?
-			ORDER BY uid
+			SELECT DISTINCT recipient
+			FROM sent_mail
+			WHERE sender=? AND message_id<=? AND recipient>?
+			ORDER BY recipient
 			LIMIT ?`, uid, through, request.AfterPeer, nativeSentMailPageSize+1)
 		if err != nil {
 			fail(w, 500, "寄件联系人暂时无法读取")
@@ -149,9 +149,9 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 
 	var readCursor int64
 	if err := s.db.SQL.QueryRowContext(r.Context(), `
-		SELECT COALESCE(MAX(id),0)
-		FROM mail
-		WHERE sender=? AND uid=? AND id<=? AND read<>0`,
+		SELECT COALESCE(MAX(message_id),0)
+		FROM sent_mail
+		WHERE sender=? AND recipient=? AND message_id<=? AND read<>0`,
 		uid, request.Peer, through).Scan(&readCursor); err != nil {
 		fail(w, 500, "寄件已读状态暂时无法读取")
 		return
@@ -159,10 +159,10 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 	page.Read = readCursor
 
 	query := `
-		SELECT id, uid, sender, kind, COALESCE(text,''), COALESCE(items_json,''),
+		SELECT message_id, recipient, sender, kind, COALESCE(text,''), COALESCE(items_json,''),
 		       COALESCE(created_ts,0), read
-		FROM mail
-		WHERE sender=? AND uid=? AND id<=?`
+		FROM sent_mail
+		WHERE sender=? AND recipient=? AND message_id<=?`
 	args := []any{uid, request.Peer, through}
 	if request.Before > 0 {
 		query += ` AND id<?`
