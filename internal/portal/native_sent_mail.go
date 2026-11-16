@@ -119,7 +119,7 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 			fail(w, 500, "寄件联系人暂时无法读取")
 			return
 		}
-		var peers []uint64
+		peers := make([]uint64, 0)
 		for rows.Next() {
 			var recipient int64
 			if err := rows.Scan(&recipient); err != nil {
