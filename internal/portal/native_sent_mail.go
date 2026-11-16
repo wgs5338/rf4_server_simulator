@@ -165,10 +165,10 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 		WHERE sender=? AND recipient=? AND message_id<=?`
 	args := []any{uid, request.Peer, through}
 	if request.Before > 0 {
-		query += ` AND id<?`
+		query += ` AND message_id<?`
 		args = append(args, request.Before)
 	}
-	query += ` ORDER BY id DESC LIMIT ?`
+	query += ` ORDER BY message_id DESC LIMIT ?`
 	args = append(args, nativeSentMailPageSize+1)
 
 	rows, err := s.db.SQL.QueryContext(r.Context(), query, args...)
