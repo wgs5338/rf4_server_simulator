@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 
 	"rf4server/internal/store"
 )
@@ -15,25 +14,25 @@ const nativeSentMailPageSize = 100
 
 // These JSON contracts are recovered from the v154 launcher's Go type metadata.
 type nativeSentMailRequest struct {
-	Through   string `json:"through"`
-	AfterPeer string `json:"afterPeer"`
-	Peer      string `json:"peer"`
-	Before    string `json:"before"`
-	Read      int64  `json:"read"`
+	Through   int64 `json:"through"`
+	AfterPeer int64 `json:"afterPeer"`
+	Peer      int64 `json:"peer"`
+	Before    int64 `json:"before"`
+	Read      int64 `json:"read"`
 }
 
 type nativeSentMailPage struct {
-	Schema    int64                    `json:"schema"`
-	Owner     string                   `json:"owner"`
-	Through   string                   `json:"through"`
-	AfterPeer string                   `json:"afterPeer"`
-	Peers     []uint64                 `json:"peers"`
-	MorePeers bool                     `json:"morePeers"`
-	Peer      string                   `json:"peer"`
-	Before    string                   `json:"before"`
-	Read      int64                    `json:"read"`
-	HasMore   bool                     `json:"hasMore"`
-	Messages  []nativeSentMailRecord   `json:"messages"`
+	Schema    int64                  `json:"schema"`
+	Owner     int64                  `json:"owner"`
+	Through   int64                  `json:"through"`
+	AfterPeer int64                  `json:"afterPeer"`
+	Peers     []uint64               `json:"peers"`
+	MorePeers bool                   `json:"morePeers"`
+	Peer      int64                  `json:"peer"`
+	Before    int64                  `json:"before"`
+	Read      int64                  `json:"read"`
+	HasMore   bool                   `json:"hasMore"`
+	Messages  []nativeSentMailRecord `json:"messages"`
 }
 
 type nativeSentMailRecord struct {
@@ -48,12 +47,12 @@ type nativeSentMailItem struct {
 }
 
 type nativeSentMailMeta struct {
-	ID      string                       `json:"id"`
-	Created int64                        `json:"created"`
-	Sender  int64                        `json:"sender"`
-	Type    string                       `json:"type"`
-	Text    string                       `json:"text"`
-	Items   []nativeSentMailAttachment   `json:"items"`
+	ID      string                     `json:"id"`
+	Created int64                      `json:"created"`
+	Sender  int64                      `json:"sender"`
+	Type    string                     `json:"type"`
+	Text    string                     `json:"text"`
+	Items   []nativeSentMailAttachment `json:"items"`
 }
 
 type nativeSentMailAttachment struct {
@@ -62,19 +61,8 @@ type nativeSentMailAttachment struct {
 	SysID string `json:"sysID"`
 }
 
-func parseNativeSentMailCursor(field, raw string) (int64, error) {
-	if raw == "" {
-		return 0, nil
-	}
-	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value < 0 {
-		return 0, fmt.Errorf("invalid %s cursor", field)
-	}
-	return value, nil
-}
-
 // nativeSentMail returns a stable snapshot of the authenticated player's
-// outbound mail. With peer empty it pages the recipient list; with peer set it
+// outbound mail. With peer zero it pages the recipient list; with peer set it
 // pages messages for that recipient. Incoming mail is never included.
 func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 	uid, ok := s.identity(w, r)
@@ -94,29 +82,9 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "寄件记录请求无效")
 		return
 	}
-
-	throughCursor, err := parseNativeSentMailCursor("through", request.Through)
-	if err != nil {
+	if request.Through < 0 || request.AfterPeer < 0 || request.Peer < 0 ||
+		request.Before < 0 || request.Read < 0 {
 		fail(w, 400, "寄件记录游标无效")
-		return
-	}
-	afterPeer, err := parseNativeSentMailCursor("afterPeer", request.AfterPeer)
-	if err != nil {
-		fail(w, 400, "收件人游标无效")
-		return
-	}
-	peer, err := parseNativeSentMailCursor("peer", request.Peer)
-	if err != nil || (request.Peer != "" && peer == 0) {
-		fail(w, 400, "收件人编号无效")
-		return
-	}
-	before, err := parseNativeSentMailCursor("before", request.Before)
-	if err != nil {
-		fail(w, 400, "邮件游标无效")
-		return
-	}
-	if request.Read < 0 {
-		fail(w, 400, "邮件读取游标无效")
 		return
 	}
 
@@ -129,25 +97,24 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	through := maxID
-	if request.Through != "" && throughCursor < through {
-		through = throughCursor
+	if request.Through > 0 && request.Through < through {
+		through = request.Through
 	}
 
 	page := nativeSentMailPage{
-		Schema: 1, Owner: strconv.FormatInt(uid, 10),
-		Through: strconv.FormatInt(through, 10),
+		Schema: 1, Owner: uid, Through: through,
 		AfterPeer: request.AfterPeer, Peers: make([]uint64, 0),
 		Peer: request.Peer, Before: request.Before,
 		Read: request.Read, Messages: make([]nativeSentMailRecord, 0),
 	}
 
-	if request.Peer == "" {
+	if request.Peer == 0 {
 		rows, err := s.db.SQL.QueryContext(r.Context(), `
 			SELECT DISTINCT uid
 			FROM mail
 			WHERE sender=? AND id<=? AND uid>?
 			ORDER BY uid
-			LIMIT ?`, uid, through, afterPeer, nativeSentMailPageSize+1)
+			LIMIT ?`, uid, through, request.AfterPeer, nativeSentMailPageSize+1)
 		if err != nil {
 			fail(w, 500, "寄件联系人暂时无法读取")
 			return
@@ -174,7 +141,7 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 		}
 		page.Peers = peers
 		if len(peers) > 0 {
-			page.AfterPeer = strconv.FormatUint(peers[len(peers)-1], 10)
+			page.AfterPeer = int64(peers[len(peers)-1])
 		}
 		write(w, page)
 		return
@@ -185,10 +152,10 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(created_ts,0), read
 		FROM mail
 		WHERE sender=? AND uid=? AND id<=?`
-	args := []any{uid, peer, through}
-	if before > 0 {
+	args := []any{uid, request.Peer, through}
+	if request.Before > 0 {
 		query += ` AND id<?`
-		args = append(args, before)
+		args = append(args, request.Before)
 	}
 	query += ` ORDER BY id DESC LIMIT ?`
 	args = append(args, nativeSentMailPageSize+1)
@@ -259,7 +226,7 @@ func (s *Server) nativeSentMail(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if len(sent) > 0 {
-		page.Before = strconv.FormatInt(sent[len(sent)-1].ID, 10)
+		page.Before = sent[len(sent)-1].ID
 	}
 	write(w, page)
 }
