@@ -97,3 +97,52 @@ func TestPortalIdentityPurchaseReplayAndLogout(t *testing.T) {
 		t.Fatal("excluded debug endpoint exposed")
 	}
 }
+
+
+func TestNativeSentMailEndpointRequiresDeviceSession(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "native-mail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.EnsureProfile(context.Background(), 42); err != nil {
+		t.Fatal(err)
+	}
+	s := New(db, func(string) int64 { return 42 })
+	call := func(token, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "https://game.test/portal/api/native-sent-mail", strings.NewReader(body))
+		r.RemoteAddr = "192.0.2.1:1000"
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	if w := call("", `{}`); w.Code != 401 {
+		t.Fatalf("unauthenticated native sent-mail request returned %d", w.Code)
+	}
+	login := httptest.NewRequest("POST", "https://game.test/portal/api/session", strings.NewReader("{}"))
+	login.RemoteAddr = "192.0.2.1:1000"
+	lw := httptest.NewRecorder()
+	s.ServeHTTP(lw, login)
+	var sessionResult struct {
+		Token string `json:"token"`
+	}
+	if lw.Code != 200 || json.Unmarshal(lw.Body.Bytes(), &sessionResult) != nil || sessionResult.Token == "" {
+		t.Fatalf("session creation failed: %d %s", lw.Code, lw.Body.String())
+	}
+	w := call(sessionResult.Token, `{"after":"","count":50}`)
+	var page struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || page.Items == nil || len(page.Items) != 0 {
+		t.Fatalf("native sent-mail compatibility page invalid: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(sessionResult.Token, `not-json`); w.Code != 400 {
+		t.Fatalf("malformed native sent-mail request returned %d", w.Code)
+	}
+}
