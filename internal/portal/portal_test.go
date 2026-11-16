@@ -135,16 +135,16 @@ func TestNativeSentMailEndpointRequiresDeviceSession(t *testing.T) {
 	if lw.Code != 200 || json.Unmarshal(lw.Body.Bytes(), &sessionResult) != nil || sessionResult.Token == "" {
 		t.Fatalf("session creation failed: %d %s", lw.Code, lw.Body.String())
 	}
-	body := `{"through":"","afterPeer":"","peer":"","before":"","read":0}`
+	body := `{"through":0,"afterPeer":0,"peer":0,"before":0,"read":0}`
 	w := call(sessionResult.Token, body)
 	var page nativeSentMailPage
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil {
 		t.Fatalf("native sent-mail page invalid: %d %s", w.Code, w.Body.String())
 	}
-	if page.Schema != 1 || page.Owner != "42" || page.Peers == nil || len(page.Peers) != 0 || page.Messages == nil || len(page.Messages) != 0 {
+	if page.Schema != 1 || page.Owner != 42 || page.Peers == nil || len(page.Peers) != 0 || page.Messages == nil || len(page.Messages) != 0 {
 		t.Fatalf("native sent-mail page shape mismatch: %+v", page)
 	}
-	if w := call(sessionResult.Token, `{"through":"","after":"","count":50}`); w.Code != 400 {
+	if w := call(sessionResult.Token, `{"through":0,"after":"","count":50}`); w.Code != 400 {
 		t.Fatalf("legacy guessed request fields should be rejected, got %d", w.Code)
 	}
 	if w := call(sessionResult.Token, `not-json`); w.Code != 400 {
@@ -207,22 +207,22 @@ func TestNativeSentMailPagesSentMessagesAndAttachments(t *testing.T) {
 		return w
 	}
 
-	peerResponse := call(`{"through":"","afterPeer":"","peer":"","before":"","read":0}`)
+	peerResponse := call(`{"through":0,"afterPeer":0,"peer":0,"before":0,"read":0}`)
 	var peerPage nativeSentMailPage
 	if peerResponse.Code != 200 || json.Unmarshal(peerResponse.Body.Bytes(), &peerPage) != nil {
 		t.Fatalf("peer page invalid: %d %s", peerResponse.Code, peerResponse.Body.String())
 	}
-	if peerPage.Owner != "42" || peerPage.Through != "3" || len(peerPage.Peers) != 2 ||
+	if peerPage.Owner != 42 || peerPage.Through != 3 || len(peerPage.Peers) != 2 ||
 		peerPage.Peers[0] != 43 || peerPage.Peers[1] != 44 || peerPage.MorePeers {
 		t.Fatalf("recipient page mismatch: %+v", peerPage)
 	}
 
-	messageResponse := call(`{"through":"3","afterPeer":"","peer":"43","before":"","read":0}`)
+	messageResponse := call(`{"through":3,"afterPeer":0,"peer":43,"before":0,"read":0}`)
 	var messagePage nativeSentMailPage
 	if messageResponse.Code != 200 || json.Unmarshal(messageResponse.Body.Bytes(), &messagePage) != nil {
 		t.Fatalf("message page invalid: %d %s", messageResponse.Code, messageResponse.Body.String())
 	}
-	if messagePage.Peer != "43" || messagePage.HasMore || len(messagePage.Messages) != 2 {
+	if messagePage.Peer != 43 || messagePage.HasMore || len(messagePage.Messages) != 2 {
 		t.Fatalf("message page count/cursor mismatch: %+v", messagePage)
 	}
 	newest := messagePage.Messages[0]
@@ -238,7 +238,7 @@ func TestNativeSentMailPagesSentMessagesAndAttachments(t *testing.T) {
 		t.Fatalf("attachment message mapping mismatch: %+v", oldest)
 	}
 
-	olderResponse := call(`{"through":"3","afterPeer":"","peer":"43","before":"2","read":0}`)
+	olderResponse := call(`{"through":3,"afterPeer":0,"peer":43,"before":2,"read":0}`)
 	var olderPage nativeSentMailPage
 	if olderResponse.Code != 200 || json.Unmarshal(olderResponse.Body.Bytes(), &olderPage) != nil ||
 		len(olderPage.Messages) != 1 || olderPage.Messages[0].Sequence != 1 {
