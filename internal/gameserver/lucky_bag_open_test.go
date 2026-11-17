@@ -113,6 +113,31 @@ func TestLuckyBagUseOpensAndGrantsConfiguredReward(t *testing.T) {
 	}
 }
 
+// TestLuckyBagUseMatchesTierRewardConfig verifies tier-based fallback.
+// The category-73 obifdihmcfn value for gift_bag_ny23_4 is 40.
+func TestLuckyBagUseMatchesTierRewardConfig(t *testing.T) {
+	t.Parallel()
+	srv, db := newBundleTestServer(t)
+	const uid int64 = 7307
+	bag := luckyBagOpenTestSetup(t, srv, db, uid, "gift_bag_ny23_4", 997304, "qst_ny2023")
+	if _, err := db.SQL.Exec(`
+		INSERT INTO kv(k,v) VALUES(?,?)
+		ON CONFLICT(k) DO UPDATE SET v=excluded.v`,
+		luckyBagOpenDefsKVKey, `[{"tier":40,"rewards":[{"item_id":"food_egg","qty":3,"weight":1}]}]`); err != nil {
+		t.Fatal(err)
+	}
+	body, handled := hItemUse(luckyBagUseTestCtx(srv, uid, bag))
+	if !handled || len(body) == 0 {
+		t.Fatalf("档位奖励开袋失败: handled=%v bytes=%d", handled, len(body))
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "food_egg"); got != 3 {
+		t.Fatalf("档位 40 奖励数量=%d，期望3", got)
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); got != 0 {
+		t.Fatalf("档位开袋后福袋仍存在: %d", got)
+	}
+}
+
 func TestLuckyBagUseLeavesOtherEventBagsUntouched(t *testing.T) {
 	t.Parallel()
 	srv, db := newBundleTestServer(t)
