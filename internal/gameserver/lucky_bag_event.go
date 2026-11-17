@@ -101,7 +101,7 @@ func (s *Server) buyLuckyBagTicket(ctx *Ctx, requestedPlace string, gold bool, q
 		ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券价格已变化，请重新打开活动界面")
 		return nil, true
 	}
-	if err := s.DB.EnsureProfile(cctx, uid); err != nil {
+	if _, err := s.DB.EnsureProfile(cctx, uid); err != nil {
 		ctx.Log.Warn("福袋入场券建立玩家档案失败", "err", err)
 		return nil, false
 	}
