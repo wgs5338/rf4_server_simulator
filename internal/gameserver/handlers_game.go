@@ -1757,7 +1757,7 @@ func registerSessionHandlers(d *Dispatch) {
 	d.Register(4, 1, hItemCount)
 	d.Register(4, 4, hItemGUIDs)
 	d.Register(4, 5, hItemDetails)
-	d.Register(4, 8, hItemUse)
+	// 4/8 的 handler 在 registerWorldHandlers 中注册；响应契约在此统一声明。
 	d.RegisterResponseContract(4, 8, ResponseContractRule{
 		Kind: proto.KindObj, TypeIDs: []uint32{800}, Classes: []string{"dlbahppbdad"},
 	})
