@@ -22,7 +22,7 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 测试库可能只导入 item_def；显式补齐 2023 年 1..10 福袋定义。
+	// 测试库可能只导入 item_def；显式补齐 2023 年福袋定义。
 	for tier := 1; tier <= 10; tier++ {
 		itemID := fmt.Sprintf("gift_bag_ny23_%d", tier)
 		numericID := int64(990230 + tier)
@@ -44,31 +44,26 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 		}
 	}
 
-	// 默认池覆盖静态库中完整的 2023 福袋 1..10 档。
+	// 客户端 xmas-stalls100.bundle 只包含 2023 福袋 1/4/7/9 四个 prefab。
+	supportedTiers := []int{1, 4, 7, 9}
 	picked, err := srv.pickLuckyBagDropItem(ctx)
 	if err != nil {
 		t.Fatalf("读取默认福袋池: %v", err)
 	}
 	if !luckyBagItemIDSupported(picked) {
-		t.Fatalf("默认福袋池抽到未识别的 2023 福袋 item_id: %s", picked)
+		t.Fatalf("默认福袋池抽到客户端缺少 prefab 的档位: %s", picked)
 	}
-	if len(defaultLuckyBagDropDefs) != 10 {
-		t.Fatalf("默认福袋池应覆盖完整 1..10 档，实得 %d", len(defaultLuckyBagDropDefs))
+	if len(defaultLuckyBagDropDefs) != len(supportedTiers) {
+		t.Fatalf("默认福袋池应只有 4 个客户端可实例化档位，实得 %d", len(defaultLuckyBagDropDefs))
 	}
 	for tier := 1; tier <= 10; tier++ {
 		itemID := fmt.Sprintf("gift_bag_ny23_%d", tier)
-		if !luckyBagItemIDSupported(itemID) {
-			t.Fatalf("完整 2023 福袋档位未纳入默认池: %s", itemID)
+		want := tier == 1 || tier == 4 || tier == 7 || tier == 9
+		if got := luckyBagItemIDSupported(itemID); got != want {
+			t.Fatalf("福袋档位 %d supported=%v，want %v", tier, got, want)
 		}
 	}
-	for _, entry := range defaultLuckyBagDropDefs {
-		if !luckyBagItemIDSupported(entry.ItemID) {
-			t.Fatalf("默认掉落池含不在 1..10 档位内的 item_id: %s", entry.ItemID)
-		}
-	}
-
-	// 逐档验证静态定义、模型字段和 category-73 wire 类都能正确匹配。
-	for tier := 1; tier <= 10; tier++ {
+	for _, tier := range supportedTiers {
 		itemID := fmt.Sprintf("gift_bag_ny23_%d", tier)
 		raw := fmt.Sprintf(`[{"item_id":%q,"weight":1}]`, itemID)
 		if _, err := db.SQL.Exec(`
@@ -78,7 +73,12 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 		}
 		got, err := srv.pickLuckyBagDropItem(ctx)
 		if err != nil || got != itemID {
-			t.Fatalf("福袋档位 %d 无法通过物品定义/模型/wire 校验: got=%q err=%v", tier, got, err)
+			t.Fatalf("客户端可用福袋档位 %d 无法通过物品定义/模型/wire 校验: got=%q err=%v", tier, got, err)
+		}
+	}
+	for _, entry := range defaultLuckyBagDropDefs {
+		if !luckyBagItemIDSupported(entry.ItemID) {
+			t.Fatalf("默认掉落池含客户端缺少 prefab 的物品: %s", entry.ItemID)
 		}
 	}
 
