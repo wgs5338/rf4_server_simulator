@@ -22,25 +22,29 @@ type luckyBagDropDef struct {
 	Weight int64  `json:"weight"`
 }
 
-// 客户端登录器内置的是 2023 福袋模型（1/4/7/9 四种 prefab）；
-// 静态库保留完整的 1..10 系列。未配置权重时先等权抽取，
-// 管理员可通过 kv.lucky_bag_drop_defs 覆盖，不把未知物品属性误当掉率。
-// 登录器实际内置的 2023 福袋 prefab 只有 1/4/7/9 四种；掉落池只发放
-// 有对应客户端模型的物品，避免 2/3/5/6/8/10 在背包或结算界面显示缺模。
+// 静态库中 2023 年福袋完整定义为 1..10 档；每档的
+// icjbboidfga 分别映射 gift_bag_1..gift_bag_10。
+// 默认等权抽取全部十档，管理员可通过 kv.lucky_bag_drop_defs 覆盖权重。
 var defaultLuckyBagDropDefs = []luckyBagDropDef{
 	{ItemID: "gift_bag_ny23_1", Weight: 1},
+	{ItemID: "gift_bag_ny23_2", Weight: 1},
+	{ItemID: "gift_bag_ny23_3", Weight: 1},
 	{ItemID: "gift_bag_ny23_4", Weight: 1},
+	{ItemID: "gift_bag_ny23_5", Weight: 1},
+	{ItemID: "gift_bag_ny23_6", Weight: 1},
 	{ItemID: "gift_bag_ny23_7", Weight: 1},
+	{ItemID: "gift_bag_ny23_8", Weight: 1},
 	{ItemID: "gift_bag_ny23_9", Weight: 1},
+	{ItemID: "gift_bag_ny23_10", Weight: 1},
 }
 
 func luckyBagModelSupported(itemID string) bool {
-	switch itemID {
-	case "gift_bag_ny23_1", "gift_bag_ny23_4", "gift_bag_ny23_7", "gift_bag_ny23_9":
-		return true
-	default:
-		return false
+	for tier := 1; tier <= 10; tier++ {
+		if itemID == fmt.Sprintf("gift_bag_ny23_%d", tier) {
+			return true
+		}
 	}
+	return false
 }
 
 func (s *Server) luckyBagDropDefs(ctx context.Context) ([]luckyBagDropDef, error) {
@@ -85,9 +89,18 @@ func (s *Server) pickLuckyBagDropItem(ctx context.Context) (string, error) {
 			continue
 		}
 		def, derr := s.DB.GetItemDefByItemID(ctx, itemID)
-		if derr != nil || def == nil || def.Category != 73 {
+		if derr != nil || def == nil || def.Category != 73 || !isLuckyBag2023Def(def) {
 			if s.log != nil {
-				s.log.Warn("福袋掉落表忽略非 category-73 定义", "item", itemID, "err", derr)
+				s.log.Warn("福袋掉落表忽略非 2023 category-73 定义", "item", itemID, "err", derr)
+			}
+			continue
+		}
+		attrs, attrsErr := bundleAttrs(def)
+		model, modelOK := attrs["icjbboidfga"].(string)
+		expectedModel := "gift_bag_" + strings.TrimPrefix(itemID, "gift_bag_ny23_")
+		if attrsErr != nil || !modelOK || model != expectedModel {
+			if s.log != nil {
+				s.log.Warn("福袋掉落表忽略模型映射不匹配的定义", "item", itemID, "model", model, "expected", expectedModel, "err", attrsErr)
 			}
 			continue
 		}
