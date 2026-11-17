@@ -387,7 +387,12 @@ func (s *Server) fishingEndSettle(ctx *Ctx) ([]byte, bool) {
 	hasFish := pending != nil && hooked
 
 	// 福袋地图沿用正常咬钩/搏鱼过程，但 14/4 的结果只能是福袋，不能把普通鱼写入图鉴、经验或护网。
-	if isLuckyBagEventKey(s.currentLevel(uid)) {
+	// 玩家若在上钩后离开活动地图，仍按这尾鱼的来源地图结算，不能漏回普通鱼路径。
+	luckyBagCatch := isLuckyBagEventKey(s.currentLevel(uid))
+	if pending != nil && isLuckyBagEventKey(pending.LocLevel) {
+		luckyBagCatch = true
+	}
+	if luckyBagCatch {
 		return s.fishingEndLuckyBag(ctx, st, pending, hooked, castProf, gearGUID)
 	}
 
