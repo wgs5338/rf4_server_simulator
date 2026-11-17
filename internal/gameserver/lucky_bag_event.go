@@ -61,11 +61,23 @@ func (s *Server) canEnterLuckyBag(uid int64) bool {
 	if s == nil {
 		return false
 	}
-	// 已在场玩家的同图重定位不额外占用名额。
-	if s.currentLevel(uid) == luckyBagMapKey {
-		return true
+	count := 0
+	selfCounted := false
+	for _, onlineUID := range s.OnlineUIDs() {
+		if s.currentLevel(onlineUID) != luckyBagMapKey {
+			continue
+		}
+		count++
+		if onlineUID == uid {
+			selfCounted = true
+		}
 	}
-	return s.luckyBagOnlinePlayers() < luckyBagMaxPlayers
+	// 同图重定位/登录恢复时，当前 UID 已计入在线人数；其他人占满 20 个
+	// 名额后再恢复会得到 21，因此不能仅凭数据库上次位置跳过容量检查。
+	if selfCounted {
+		return count <= luckyBagMaxPlayers
+	}
+	return count < luckyBagMaxPlayers
 }
 
 // buyLuckyBagTicket 处理 3/38 的福袋入场券购买。
