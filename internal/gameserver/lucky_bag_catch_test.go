@@ -67,6 +67,21 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 		}
 	}
 
+	// 逐档验证静态定义、模型字段和 category-73 wire 类都能正确匹配。
+	for tier := 1; tier <= 10; tier++ {
+		itemID := fmt.Sprintf("gift_bag_ny23_%d", tier)
+		raw := fmt.Sprintf(`[{"item_id":%q,"weight":1}]`, itemID)
+		if _, err := db.SQL.Exec(`
+			INSERT INTO kv(k,v) VALUES(?,?)
+			ON CONFLICT(k) DO UPDATE SET v=excluded.v`, luckyBagDropDefsKVKey, raw); err != nil {
+			t.Fatal(err)
+		}
+		got, err := srv.pickLuckyBagDropItem(ctx)
+		if err != nil || got != itemID {
+			t.Fatalf("福袋档位 %d 无法通过物品定义/模型/wire 校验: got=%q err=%v", tier, got, err)
+		}
+	}
+
 	// 用单一权重项固定测试结果，避免随机抽样影响断言。
 	if _, err := db.SQL.Exec(`
 		INSERT INTO kv(k,v) VALUES(?,?)
