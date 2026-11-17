@@ -1743,6 +1743,10 @@ func registerSessionHandlers(d *Dispatch) {
 	d.Register(4, 1, hItemCount)
 	d.Register(4, 4, hItemGUIDs)
 	d.Register(4, 5, hItemDetails)
+	d.Register(4, 8, hItemUse)
+	d.RegisterResponseContract(4, 8, ResponseContractRule{
+		Kind: proto.KindObj, TypeIDs: []uint32{800}, Classes: []string{"dlbahppbdad"},
+	})
 	d.Register(5, 1, hSkillsGet)
 	d.Register(11, 1, hShortcutSnapshot)
 	d.Register(11, 2, hShortcutBind)
