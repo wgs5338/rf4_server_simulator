@@ -78,3 +78,29 @@ func TestLuckyBagDirectCastCannotBypassExpiredTicket(t *testing.T) {
 			handled, len(body), present, failed)
 	}
 }
+
+
+// TestLuckyBagPriceMatchesClientQuotes covers both display units and wallet units.
+func TestLuckyBagPriceMatchesClientQuotes(t *testing.T) {
+	tests := []struct {
+		name  string
+		gold  bool
+		price int64
+		want  bool
+	}{
+		{name: "silver wallet cents", price: luckyBagSilverPrice, want: true},
+		{name: "silver client display", price: 1_000_000, want: true},
+		{name: "wrong silver price", price: 1_000_001, want: false},
+		{name: "gold wallet cents", gold: true, price: luckyBagGoldPrice, want: true},
+		{name: "gold client display", gold: true, price: 8, want: true},
+		{name: "wrong gold price", gold: true, price: 9, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := luckyBagPriceMatches(tt.gold, tt.price); got != tt.want {
+				t.Fatalf("luckyBagPriceMatches(%v, %d)=%v, want %v",
+					tt.gold, tt.price, got, tt.want)
+			}
+		})
+	}
+}
