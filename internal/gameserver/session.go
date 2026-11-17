@@ -239,6 +239,9 @@ func (s *Session) startKeepalive() {
 				if s.consumeTripTimes(time.Now()) {
 					s.Push2_1()
 				}
+				// 福袋入场券按 Unix 到期时间运行，在线与离线同样倒计时；
+				// 到期后撤销 f23 voucher，若仍在活动地图则恢复原地图位置。
+				s.Srv.expireLuckyBagSession(s, time.Now())
 				// 每 6 拍（约 30 秒）刷新一次已租用船票的剩余分钟，
 				// 让客户端的到期提示随时间递减（客户端自身不会重算）。
 				// 每 6 拍（约 30 秒）清理一次已到期的租用船票。
