@@ -42,6 +42,10 @@ func (d *DB) GetLuckyBagSession(ctx context.Context, uid int64) (*LuckyBagSessio
 
 // UpsertLuckyBagSessionTx 在扣款事务内创建/续建入场券。
 func (d *DB) UpsertLuckyBagSessionTx(ctx context.Context, tx *sql.Tx, v LuckyBagSession) error {
+	purchases := v.Purchases
+	if purchases <= 0 {
+		purchases = 1
+	}
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO lucky_bag_session(
 			uid, origin_level_key, origin_scene, origin_spot, expires_at,
@@ -58,7 +62,7 @@ func (d *DB) UpsertLuckyBagSessionTx(ctx context.Context, tx *sql.Tx, v LuckyBag
 			purchased_ts=excluded.purchased_ts,
 			notified_ts=0`,
 		v.UID, v.OriginLevelKey, v.OriginScene, v.OriginSpot, v.ExpiresAt,
-		v.PaidCurrency, v.PaidAmount, max64(v.Purchases, 1), v.PurchasedTS)
+		v.PaidCurrency, v.PaidAmount, purchases, v.PurchasedTS)
 	return err
 }
 
