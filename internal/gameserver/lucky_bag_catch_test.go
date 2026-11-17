@@ -49,7 +49,7 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取默认福袋池: %v", err)
 	}
-	if !luckyBagModelSupported(picked) {
+	if !luckyBagItemIDSupported(picked) {
 		t.Fatalf("默认福袋池抽到登录器没有 prefab 的物品: %s", picked)
 	}
 	if len(defaultLuckyBagDropDefs) != 10 {
@@ -57,12 +57,12 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	}
 	for tier := 1; tier <= 10; tier++ {
 		itemID := fmt.Sprintf("gift_bag_ny23_%d", tier)
-		if !luckyBagModelSupported(itemID) {
+		if !luckyBagItemIDSupported(itemID) {
 			t.Fatalf("完整 2023 福袋档位未纳入默认池: %s", itemID)
 		}
 	}
 	for _, entry := range defaultLuckyBagDropDefs {
-		if !luckyBagModelSupported(entry.ItemID) {
+		if !luckyBagItemIDSupported(entry.ItemID) {
 			t.Fatalf("默认掉落池含未支持 prefab: %s", entry.ItemID)
 		}
 	}
