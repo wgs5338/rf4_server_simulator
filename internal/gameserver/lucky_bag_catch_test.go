@@ -147,8 +147,9 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 		t.Fatalf("福袋结算不应返回普通鱼对象: kind=%s f0=%+v", decoded.Kind, decoded.Fields[0])
 	}
 	grants := decoded.Fields[8].Val
-	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 2 || grants.Items[1].Class != "cdmnfgijenb" {
-		t.Fatalf("801.f8 未返回 category-73 福袋实例: %+v", grants)
+	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 1 ||
+		grants.Items[0] == nil || grants.Items[0].Class != "cdmnfgijenb" {
+		t.Fatalf("801.f8 应只返回一个 category-73 福袋实例: %+v", grants)
 	}
 }
 
