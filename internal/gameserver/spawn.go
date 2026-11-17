@@ -282,6 +282,7 @@ func (s *Server) buildSpawnLocatorBody(uid int64, levelKey, scene string, nowUni
 
 // buildMapDobBody 1/12 place：指定地图 key 的 dob(205 dobfogbcggd)。
 func (s *Server) buildMapDobBody(uid int64, key string, nowUnix int64) ([]byte, error) {
+	key = canonicalLevelKey(key)
 	maps, err := loadMapDefs()
 	if err != nil {
 		return nil, err
@@ -314,6 +315,7 @@ func (s *Server) buildTravelBody(sess *Session, key string) ([]byte, error) {
 }
 
 func (s *Server) buildTravelBodyAt(sess *Session, key string, nowUnix int64) ([]byte, error) {
+	key = canonicalLevelKey(key)
 	dobBody, err := s.buildMapDobBody(sess.Userid, key, nowUnix)
 	if err != nil {
 		return nil, err
@@ -380,6 +382,7 @@ var placeBuyoutTiers = map[string][3]int64{
 
 // placeBuyoutPrice 该地点第 packet(1/2/3) 档买断价（无此地点/该档为 0 → 0）。
 func placeBuyoutPrice(place string, packet int64) int64 {
+	place = canonicalLevelKey(place)
 	tiers, ok := placeBuyoutTiers[place]
 	if !ok || packet < 1 || packet > 3 {
 		return 0
@@ -416,7 +419,7 @@ var placeTravelCosts = map[string]int64{
 
 // placeTravelCost 返回切到该地图需要扣除的银币。
 func placeTravelCost(key string) int64 {
-	return placeTravelCosts[key]
+	return placeTravelCosts[canonicalLevelKey(key)]
 }
 
 // hasFreeTravelAccessTx 判断玩家是否可免票进入该地图，所有判定都读同一个
@@ -460,8 +463,18 @@ func hasFreeTravelAccessTx(ctx context.Context, tx *sql.Tx, uid int64, place str
 	return remaining > 0, nil
 }
 
+// canonicalLevelKey 把活动入口标识归一到静态库中的惩戒池塘地图 key。
+// 客户端活动使用 level_lucky_bag；地图/地点静态数据使用 level_ban。
+func canonicalLevelKey(key string) string {
+	if key == "level_lucky_bag" {
+		return "level_ban"
+	}
+	return key
+}
+
 // travelLevelKey 校验 1/12 和 1/14 的目标地图；无效 key 退回出生地图。
 func travelLevelKey(want string) string {
+	want = canonicalLevelKey(want)
 	if !validLevelKey(want) {
 		return spawnLevelKey
 	}
@@ -470,6 +483,7 @@ func travelLevelKey(want string) string {
 
 // validLevelKey 只接受世界地图静态表中存在的地图 key。
 func validLevelKey(key string) bool {
+	key = canonicalLevelKey(key)
 	if key == "" {
 		return false
 	}
@@ -483,6 +497,7 @@ func validLevelKey(key string) bool {
 
 // sceneForLevel 返回地图对应的已知场景名；未登记地图返回空字符串。
 func sceneForLevel(levelKey string) string {
+	levelKey = canonicalLevelKey(levelKey)
 	switch levelKey {
 	case "level_001_lake":
 		return "loc1_01"
