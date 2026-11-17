@@ -82,6 +82,18 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 		}
 	}
 
+	// 即使后台误配了静态库存在、但客户端 bundle 没有 prefab 的第 2 档，
+	// 运行时也必须拒绝，不允许 KV 覆盖绕过资源白名单。
+	if _, err := db.SQL.Exec(`
+		INSERT INTO kv(k,v) VALUES(?,?)
+		ON CONFLICT(k) DO UPDATE SET v=excluded.v`,
+		luckyBagDropDefsKVKey, `[{"item_id":"gift_bag_ny23_2","weight":1}]`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := srv.pickLuckyBagDropItem(ctx); err == nil {
+		t.Fatalf("客户端缺少 prefab 的第 2 档不应被 KV 启用: %s", got)
+	}
+
 	// 用单一权重项固定测试结果，避免随机抽样影响断言。
 	if _, err := db.SQL.Exec(`
 		INSERT INTO kv(k,v) VALUES(?,?)
