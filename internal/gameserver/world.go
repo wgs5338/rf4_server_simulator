@@ -539,6 +539,10 @@ func hPlaceTripTx(ctx *Ctx) ([]byte, bool) {
 	}
 	uid := ctx.Sess.Userid
 	place, gold, price := parsePlaceTripArgs(ctx.Tree)
+	// 福袋活动使用独立的墙钟入场券，不进入普通钓鱼游在线计时状态。
+	if isLuckyBagEventKey(place) {
+		return srv.buyLuckyBagTicket(ctx, place, gold, price)
+	}
 	durSec := srv.currentTripDurationSec(ctx.Sess.pushCtx())
 	if !validLevelKey(place) || price <= 0 {
 		ctx.Log.Warn("3/38 参数无效", "place", place, "gold", gold, "price", price)
