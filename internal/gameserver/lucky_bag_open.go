@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
 	"strings"
 
 	"rf4server/internal/proto"
@@ -55,7 +57,7 @@ func (s *Server) luckyBagOpenLootDef(ctx context.Context, bagDef *store.ItemDef)
 	var raw string
 	err := s.DB.SQL.QueryRowContext(ctx, `SELECT v FROM kv WHERE k=?`, luckyBagOpenDefsKVKey).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && strings.TrimSpace(raw) == "") {
-		return out, nil
+		return out, fmt.Errorf("未配置 2023 福袋奖励表")
 	}
 	if err != nil {
 		return out, err
@@ -68,17 +70,56 @@ func (s *Server) luckyBagOpenLootDef(ctx context.Context, bagDef *store.ItemDef)
 	// 精确 item_id 优先，避免同档位不同外观的袋子互相覆盖。
 	for _, entry := range configured {
 		if strings.EqualFold(strings.TrimSpace(entry.ItemID), bagDef.ItemID) {
+			if len(entry.Rewards) == 0 {
+				return out, fmt.Errorf("福袋 %s 的奖励表为空", bagDef.ItemID)
+			}
 			out.Rewards = entry.Rewards
 			return out, nil
 		}
 	}
 	for _, entry := range configured {
 		if strings.TrimSpace(entry.ItemID) == "" && entry.Tier > 0 && entry.Tier == tier {
+			if len(entry.Rewards) == 0 {
+				return out, fmt.Errorf("福袋档位 %d 的奖励表为空", tier)
+			}
 			out.Rewards = entry.Rewards
 			return out, nil
 		}
 	}
-	return out, nil
+	return out, fmt.Errorf("未找到福袋 %s（档位 %d）的奖励配置", bagDef.ItemID, tier)
+}
+
+// pickLuckyBagOpenReward 只从明确配置的福袋奖励表中抽取。
+// 与通用 loot box 不同，官方福袋奖励表缺失时绝不回退到随机商店商品。
+func (s *Server) pickLuckyBagOpenReward(ctx context.Context, rewards []lootBoxReward) (string, int64, string) {
+	eligible := make([]lootBoxReward, 0, len(rewards))
+	var total float64
+	for _, reward := range rewards {
+		if strings.TrimSpace(reward.ItemID) == "" || reward.Weight <= 0 ||
+			!s.lootRewardItemEligible(ctx, reward.ItemID) {
+			continue
+		}
+		eligible = append(eligible, reward)
+		total += reward.Weight
+		if math.IsInf(total, 0) || math.IsNaN(total) {
+			return "", 0, ""
+		}
+	}
+	if total <= 0 || len(eligible) == 0 {
+		return "", 0, ""
+	}
+	roll := rand.Float64() * total
+	for _, reward := range eligible {
+		if roll < reward.Weight {
+			qty := reward.Qty
+			if qty <= 0 {
+				qty = 1
+			}
+			return reward.ItemID, qty, s.lootItemName(ctx, reward.ItemID)
+		}
+		roll -= reward.Weight
+	}
+	return "", 0, ""
 }
 
 func (s *Server) prepareLuckyBagOpenReward(ctx context.Context, uid int64, itemID string, qty int64) ([]*store.Item, error) {
@@ -115,8 +156,8 @@ func (s *Server) prepareLuckyBagOpenReward(ctx context.Context, uid int64, itemI
 
 // useLuckyBag 处理 category-73 的 2023 福袋 4/8 使用请求。
 // 先在事务外准备奖励，再在同一库存事务中删除福袋、发放奖励；任一步失败都回滚。
-// 默认从有库存的商店物品中随机抽取一件，管理员可用 kv.lucky_bag_open_defs
-// 为具体袋子或 obifdihmcfn 档位配置加权奖励。
+// 必须从 kv.lucky_bag_open_defs 读取明确的官方奖励配置；未配置时拒绝开袋，
+// 不以随机商店商品冒充官方奖励。
 func (s *Server) useLuckyBag(ctx *Ctx) ([]byte, bool) {
 	if !s.requireDB(ctx) {
 		return nil, false
@@ -155,7 +196,7 @@ func (s *Server) useLuckyBag(ctx *Ctx) ([]byte, bool) {
 		ctx.Log.Warn("福袋奖励配置读取失败", "item", row.ItemID, "err", err)
 		return fail("福袋奖励暂时无法读取，请重试")
 	}
-	rewardID, rewardQty, rewardName := s.pickLootReward(cctx, lootDef)
+	rewardID, rewardQty, rewardName := s.pickLuckyBagOpenReward(cctx, lootDef.Rewards)
 	if rewardID == "" || rewardQty <= 0 {
 		ctx.Log.Warn("福袋没有可用奖励", "item", row.ItemID)
 		return fail("福袋暂时没有可发放的奖励")
