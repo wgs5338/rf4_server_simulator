@@ -465,6 +465,8 @@ func hasFreeTravelAccessTx(ctx context.Context, tx *sql.Tx, uid int64, place str
 
 // canonicalLevelKey 把活动入口标识归一到静态库中的惩戒池塘地图 key。
 // 客户端活动使用 level_lucky_bag；地图/地点静态数据使用 level_ban。
+// level_ban 的 205 天气描述暂借用同为池塘的 level_019_american_pond 基线；
+// 这只是天气计划/预报回退，不复制或替换客户端本地的惩戒池塘场景。
 func canonicalLevelKey(key string) string {
 	if key == "level_lucky_bag" {
 		return "level_ban"
