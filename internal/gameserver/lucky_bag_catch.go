@@ -279,7 +279,7 @@ func (s *Server) fishingEndLuckyBag(ctx *Ctx, st *FishState, pending *RolledFish
 	// 把“券仍有效”的检查与福袋入库串行化，避免到期 keepalive 在检查后、
 	// 发奖前抢先撤销资格。
 	s.luckyBagMu.Lock()
-	_, active, err := s.luckyBagSession(cctx, uid, now)
+	_, active, err := s.luckyBagSession(cctx, uid, time.Now())
 	if err != nil {
 		s.luckyBagMu.Unlock()
 		ctx.Log.Warn("福袋地图结算读取入场券失败", "uid", uid, "err", err)
