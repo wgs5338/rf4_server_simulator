@@ -6,12 +6,16 @@ import (
 	"strings"
 	"testing"
 
+	"rf4server/internal/config"
+	"rf4server/internal/logging"
 	"rf4server/internal/proto"
 )
 
 func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	t.Parallel()
-	srv, db := newRigTestServer(t)
+	db := openItemTestDB(t)
+	srv := NewServer(config.Game{Tunnel: config.Tunnel{PSK: "lucky-bag"}}, logging.Discard(), nil)
+	srv.SetDB(db)
 	ctx := context.Background()
 	const uid int64 = 1000083
 	if err := srv.EnsurePlayer(ctx, uid); err != nil {
@@ -88,7 +92,7 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	}
 
 	// 801.f0 为空、f8 只包含福袋实例，不把普通鱼作为本次渔获返回。
-	sess := newProbeSess(srv)
+	sess := &Session{ID: 1, Userid: uid, Srv: srv, log: logging.Discard()}
 	body, err := srv.buildLuckyBagOnlySettle801(sess, 123.5, first)
 	if err != nil {
 		t.Fatalf("构造福袋结算响应: %v", err)
@@ -136,7 +140,7 @@ func TestLuckyBagCompletedCatchRecoveryDoesNotKeepFish(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st := srv.newFishState(uid, nil)
+	st := srv.stateFor(uid)
 	st.mu.Lock()
 	st.Pending = &RolledFish{FishGUID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", LocLevel: luckyBagMapKey}
 	st.Hooked = true
