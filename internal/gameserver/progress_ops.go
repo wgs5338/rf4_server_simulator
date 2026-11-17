@@ -386,6 +386,11 @@ func (s *Server) fishingEndSettle(ctx *Ctx) ([]byte, bool) {
 	var qualChanges map[int64]store.QualificationState
 	hasFish := pending != nil && hooked
 
+	// 福袋地图沿用正常咬钩/搏鱼过程，但 14/4 的结果只能是福袋，不能把普通鱼写入图鉴、经验或护网。
+	if isLuckyBagEventKey(s.currentLevel(uid)) {
+		return s.fishingEndLuckyBag(ctx, st, pending, hooked, castProf, gearGUID)
+	}
+
 	if pending != nil && !hooked {
 		// 鱼已咬钩但玩家未刺中就收竿：鱼会凭空消失，必须有反馈。
 		// 用跑鱼模板（kind3/语气词）播报"跑掉了"，不再静默。
