@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"rf4server/internal/config"
 	"rf4server/internal/logging"
@@ -769,6 +770,20 @@ func TestLuckyBagEventKeyUsesBanPondMap(t *testing.T) {
 	const startSilver int64 = 1234567
 	seedTravelTestPlayer(t, db, uid, startSilver)
 	srv := newLocationTestServer(t, db)
+
+	// 1/14 进入活动地图必须持有有效的 30 min 福袋券；本测试验证 key 归一，
+	// 因此显式建立有效券，不绕过活动地图的入场授权。
+	now := time.Now()
+	if _, err := db.SQL.Exec(`
+		INSERT INTO lucky_bag_session(
+			uid,origin_level_key,origin_scene,origin_spot,expires_at,
+			paid_currency,paid_amount,purchases,purchased_ts,notified_ts)
+		VALUES(?,?,?,?,?,?,?,?,?,0)`,
+		uid, spawnLevelKey, sceneForLevel(spawnLevelKey), 0,
+		float64(now.Add(20*time.Minute).Unix()), "silver", luckyBagSilverPrice, 1,
+		float64(now.Unix())); err != nil {
+		t.Fatal(err)
+	}
 
 	// 1/12 地图读取：响应 205 的规范 key 应为 level_ban。
 	placeCtx := locationTestCtx(locationTestSession(srv, uid),
