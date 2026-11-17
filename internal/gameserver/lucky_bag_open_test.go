@@ -156,3 +156,34 @@ func TestLuckyBagUseRollbackKeepsBagWhenRewardInsertFails(t *testing.T) {
 		t.Fatalf("奖励事务回滚后不应残留奖励: %d", n)
 	}
 }
+
+
+// TestLuckyBagUseReplayDoesNotDuplicateReward ensures a repeated 4/8 request
+// cannot consume the same bag twice or grant a second reward.
+func TestLuckyBagUseReplayDoesNotDuplicateReward(t *testing.T) {
+	t.Parallel()
+	srv, db := newBundleTestServer(t)
+	const uid int64 = 7304
+	bag := luckyBagOpenTestSetup(t, srv, db, uid, "gift_bag_ny23_4", 997304, "qst_ny2023")
+	if _, err := db.SQL.Exec(`
+		INSERT INTO kv(k,v) VALUES(?,?)
+		ON CONFLICT(k) DO UPDATE SET v=excluded.v`,
+		luckyBagOpenDefsKVKey, `[{"item_id":"gift_bag_ny23_4","rewards":[{"item_id":"food_egg","qty":5,"weight":1}]}]`); err != nil {
+		t.Fatal(err)
+	}
+
+	firstBody, firstHandled := hItemUse(luckyBagUseTestCtx(srv, uid, bag))
+	if !firstHandled || len(firstBody) == 0 {
+		t.Fatalf("首次开袋失败: handled=%v bytes=%d", firstHandled, len(firstBody))
+	}
+	replayBody, replayHandled := hItemUse(luckyBagUseTestCtx(srv, uid, bag))
+	if !replayHandled || len(replayBody) == 0 {
+		t.Fatalf("重复请求应安全返回空背包快照: handled=%v bytes=%d", replayHandled, len(replayBody))
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "food_egg"); got != 5 {
+		t.Fatalf("重复请求导致奖励重复发放: food_egg=%d，期望5", got)
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); got != 0 {
+		t.Fatalf("重复请求后福袋不应重新出现: %d", got)
+	}
+}
