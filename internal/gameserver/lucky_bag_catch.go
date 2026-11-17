@@ -276,19 +276,25 @@ func (s *Server) fishingEndLuckyBag(ctx *Ctx, st *FishState, pending *RolledFish
 
 	now := time.Now()
 	s.expireLuckyBagSession(ctx.Sess, now)
+	// 把“券仍有效”的检查与福袋入库串行化，避免到期 keepalive 在检查后、
+	// 发奖前抢先撤销资格。
+	s.luckyBagMu.Lock()
 	_, active, err := s.luckyBagSession(cctx, uid, now)
 	if err != nil {
+		s.luckyBagMu.Unlock()
 		ctx.Log.Warn("福袋地图结算读取入场券失败", "uid", uid, "err", err)
 		ctx.ReplyFailure("System.IO.IOException", "福袋入场资格暂时无法验证，请重试")
 		return nil, true
 	}
 	if !active {
+		s.luckyBagMu.Unlock()
 		clearLuckyBagCatchState(st, pending)
 		ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期，请返回原地图")
 		return nil, true
 	}
 
 	bag, replayed, err := s.grantLuckyBagCatch(cctx, uid, pending.FishGUID)
+	s.luckyBagMu.Unlock()
 	if err != nil {
 		ctx.Log.Warn("福袋地图奖励发放失败", "uid", uid, "fish", shortGUID(pending.FishGUID), "err", err)
 		ctx.ReplyFailure("System.IO.IOException", "福袋奖励未能保存，请重试")
