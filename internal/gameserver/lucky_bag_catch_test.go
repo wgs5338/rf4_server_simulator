@@ -9,12 +9,6 @@ import (
 	"rf4server/internal/proto"
 )
 
-func seedLuckyBagDropDefsForTest(t *testing.T, db interface {
-	Exec(query string, args ...any) (any, error)
-}) {
-	t.Helper()
-}
-
 func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	t.Parallel()
 	srv, db := newRigTestServer(t)
@@ -106,8 +100,8 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	if decoded.Kind != proto.KindObj || decoded.Fields[0].Kind != proto.KindNull {
 		t.Fatalf("福袋结算不应返回普通鱼对象: kind=%s f0=%v", decoded.Kind, decoded.Fields[0])
 	}
-	grants := decoded.Fields[8]
-	if grants == nil || len(grants.Items) != 2 || grants.Items[1].Class != "cdmnfgijenb" {
+	grants := decoded.Fields[8].Val
+	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 2 || grants.Items[1].Class != "cdmnfgijenb" {
 		t.Fatalf("801.f8 未返回 category-73 福袋实例: %+v", grants)
 	}
 }
