@@ -165,8 +165,10 @@ func (s *Server) lootCarrierItemEligible(ctx context.Context, itemID string) boo
 	if !ok {
 		return false
 	}
-	if !lootWireCategoryEligible(category) {
-		s.log.Warn("礼包载体类别不可物化", "item", itemID, "category", category)
+	// 通用礼包载体与奖励使用同一资格白名单；category 55/73 即使有
+	// 原生 wire 类，也不能作为通用礼包的嵌套载体。活动福袋由专用流程发放。
+	if !lootRewardCategoryEligible(category) {
+		s.log.Warn("礼包载体类别不可发放", "item", itemID, "category", category)
 		return false
 	}
 	return true
