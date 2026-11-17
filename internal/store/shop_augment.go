@@ -40,11 +40,11 @@ func shopBookIDs(def shopStoreDefinition) map[string]bool {
 }
 
 type shopItemMeta struct {
-	Category      int64
-	Kind          string // item_catalog.kind：用于价格中位数/系列估价
+	Category       int64
+	Kind           string // item_catalog.kind：用于价格中位数/系列估价
 	DefinitionKind string // item_def.kind：用于特殊门店品牌/子类筛选
-	Brand         string
-	Name          string
+	Brand          string
+	Name           string
 }
 
 type shopSupplement struct {
