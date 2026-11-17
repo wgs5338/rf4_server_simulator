@@ -80,7 +80,7 @@ func (s *Server) pickLuckyBagDropItem(ctx context.Context) (string, error) {
 		}
 		if !luckyBagItemIDSupported(itemID) {
 			if s.log != nil {
-				s.log.Warn("福袋掉落表忽略不在 2023 福袋 1..10 档位内的物品", "item", itemID)
+				s.log.Warn("福袋掉落表忽略客户端 bundle 未提供 prefab 的档位", "item", itemID)
 			}
 			continue
 		}
