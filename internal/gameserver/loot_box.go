@@ -41,9 +41,9 @@ type lootBoxDef struct {
 	Chance  float64         `json:"chance"` // 每次钓获触发的概率 0..1
 	Rewards []lootBoxReward `json:"rewards"`
 	// CarrierItem 可选：开袋时额外发放的"可见载体"物品。
-	// category 73 的 gift_bag 已确认使用原生实例类 cdmnfgijenb/13011；
-	// 但它的活动任务与开袋奖励流程独立于通用 loot box，因此此处仍只作为显式载体配置，
-	// 不以通用载体逻辑替代福袋活动的专用掉落/领奖流程。
+	// category 73 的 gift_bag 虽已确认使用原生实例类 cdmnfgijenb/13011，
+	// 但其活动任务与领奖流程独立于通用 loot box；通用载体白名单会排除
+	// category 55/73，福袋只能由活动专用掉落/领奖流程发放。
 	CarrierItem string `json:"carrier_item"`
 	CarrierQty  int64  `json:"carrier_qty"`
 }
