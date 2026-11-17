@@ -146,7 +146,7 @@ func (s *Server) useLuckyBag(ctx *Ctx) ([]byte, bool) {
 	if ctx.Sess.Closed() {
 		return fail("会话已关闭，请重新连接")
 	}
-	if !hasStorage || storage != containerBackpack || row.Container != "backpack" || row.RigGUID != "" {
+	if !hasStorage || storage != 0 || row.Container != "backpack" || row.RigGUID != "" {
 		return fail("福袋只能在背包中打开")
 	}
 
