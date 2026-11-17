@@ -117,6 +117,7 @@ var categoryWireClass = map[int64]wireClassEntry{
 	70: {"lligmmmgllg", 12703}, // case 68 ddhcineacka
 	71: {"focdogajjcc", 13001}, // case 69 lcadlijehco
 	72: {"enikeammfen", 2015},  // case 70 iidloljandl
+	73: {"cdmnfgijenb", 13011}, // 新年福袋：静态定义 13010 / 背包实例 13011
 	76: {"fdnngkgnmon", 13041}, // case 74 ghikepgmojg
 	78: {"dapkdcghfmg", 11301}, // case 76 ipdpoaiekem
 	82: {"ckfmndabaei", 11304}, // imdcjllgdcn 卡册
