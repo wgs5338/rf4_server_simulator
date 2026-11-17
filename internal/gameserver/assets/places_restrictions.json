@@ -11,10 +11,6 @@
     {"category": 6, "subtype": 1, "mode": "tier_max", "tier_attr": "gkfbafmbpam", "max_tier": 5,
      "note": "spin 纺车轮：size 档≥6 禁（允许≤5）"}
    ]
-  },
-  "level_lucky_bag": {
-   "caption": "福袋地图（不限制鱼竿和鱼轮）",
-   "rules": []
   }
  }
 }
