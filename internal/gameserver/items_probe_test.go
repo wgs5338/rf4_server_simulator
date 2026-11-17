@@ -630,9 +630,12 @@ func TestLuckyBagCategory73NativeWireClass(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	it, err := srv.CreateItem(ctx, uid, itemID, "backpack", 1)
+	it, err := srv.prepareNewItem(ctx, uid, itemID, "backpack", 1, "")
 	if err != nil {
-		t.Fatalf("CreateItem category73: %v", err)
+		t.Fatalf("prepareNewItem category73: %v", err)
+	}
+	if err := db.InsertItem(ctx, it); err != nil {
+		t.Fatalf("InsertItem category73: %v", err)
 	}
 	if it.WireClass != "cdmnfgijenb" || it.TypeID != 13011 {
 		t.Fatalf("福袋实例 wire=%s/%d, want cdmnfgijenb/13011", it.WireClass, it.TypeID)
@@ -655,7 +658,7 @@ func TestLuckyBagCategory73NativeWireClass(t *testing.T) {
 	if tree.Fields[guidIdx].Hex != it.GUID {
 		t.Fatalf("福袋 GUID=%s, want %s", tree.Fields[guidIdx].Hex, it.GUID)
 	}
-	if got := u64Of(tree.Fields[idIdx].Num); got != uint64(numericID) {
+	if got := tree.Fields[idIdx].Num; got != uint64(numericID) {
 		t.Fatalf("福袋 numeric ID=%d, want %d", got, numericID)
 	}
 	body, err := proto.EncodeValue(tree, srv.Table())
