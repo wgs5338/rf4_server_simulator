@@ -869,6 +869,19 @@ func hCastPrepare(ctx *Ctx) ([]byte, bool) {
 	if !srv.requireDB(ctx) {
 		return nil, false
 	}
+	if srv.currentLevel(ctx.Sess.Userid) == luckyBagMapKey {
+		srv.expireLuckyBagSession(ctx.Sess, time.Now())
+		_, active, err := srv.luckyBagSession(ctx.Sess.pushCtx(), ctx.Sess.Userid, time.Now())
+		if err != nil {
+			ctx.Log.Warn("福袋地图抛竿前读取入场券失败", "err", err)
+			return nil, false
+		}
+		if !active {
+			ctx.Log.Info("福袋入场券已过期，拒绝抛竿", "uid", ctx.Sess.Userid)
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期，请返回原地图")
+			return nil, true
+		}
+	}
 	guids := deepGUIDs(ctx.Tree)
 	gear := ""
 	if len(guids) > 0 {
