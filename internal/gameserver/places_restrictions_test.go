@@ -108,3 +108,42 @@ func TestPlaceRodAndRigViolation(t *testing.T) {
 		t.Fatalf("铜壶抛投 size5 纺车轮钓组不应被拒: %s", reason)
 	}
 }
+
+
+func TestLuckyBagAllowsAllRodsAndReels(t *testing.T) {
+	srv, db := newRigTestServer(t)
+	ctx := context.Background()
+	const uid = int64(1000001)
+	if _, err := db.EnsureProfile(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetPlayerLocation(ctx, uid, "level_lucky_bag", "", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// 福袋地图不要求伸缩手竿；原有鲤竿、纺车竿和高规格渔轮均不做地点拦截。
+	carp, err := srv.CreateItem(ctx, uid, "carp_10046_360H", "backpack", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spinRod, err := srv.CreateItem(ctx, uid, "spin_10158_M100HH", "backpack", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bigReel, err := srv.CreateItem(ctx, uid, "spin_7016", "backpack", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if reason := srv.placeRodViolation(ctx, uid, carp.GUID); reason != "" {
+		t.Fatalf("福袋地图不应限制鲤竿: %s", reason)
+	}
+	if reason := srv.placeRodViolation(ctx, uid, spinRod.GUID); reason != "" {
+		t.Fatalf("福袋地图不应限制纺车竿: %s", reason)
+	}
+	srv.rigSetComponent(ctx, uid, spinRod.GUID, 0, bigReel.GUID, 0,
+		rigSetOpts{ParentType: familyRod, EnforceCategory: true, SplitStack: true})
+	if reason := srv.placeRigViolation(ctx, uid, spinRod.GUID); reason != "" {
+		t.Fatalf("福袋地图不应限制整套钓组: %s", reason)
+	}
+}
