@@ -59,12 +59,45 @@ func (s *Server) recoverCompletedCatch(uid int64, notify *Session) error {
 
 func (s *Server) recoverCompletedCatchLocked(st *FishState) (*store.KeepnetEntry, error) {
 	st.mu.Lock()
-	defer st.mu.Unlock()
 	if !st.persist.recoverCompleted || !completedCatchPending(st) {
+		st.mu.Unlock()
 		return nil, nil
 	}
 	uid := st.persist.uid
 	fish := st.Pending
+	luckyBagCatch := fish != nil && (isLuckyBagEventKey(fish.LocLevel) || isLuckyBagEventKey(s.currentLevel(uid)))
+	st.mu.Unlock()
+
+	// 福袋地图的上钩状态不能走普通鱼的 catch-settlement / keepnet 恢复路径。
+	// 若进程在 14/4 奖励提交后、状态快照清理前退出，按鱼 GUID 回执重取同一个福袋。
+	if luckyBagCatch {
+		row, _, err := s.grantLuckyBagCatch(s.dbCtx(), uid, fish.FishGUID)
+		if err != nil {
+			return nil, err
+		}
+		st.mu.Lock()
+		if st.Pending != nil && strings.EqualFold(st.Pending.FishGUID, fish.FishGUID) {
+			st.Pending = nil
+			st.Hooked, st.CastActive, st.Resolved = false, false, true
+			st.persist.recoverCompleted, st.persist.recoverPending = false, false
+			st.cancelBiteTimerLocked()
+			st.cancelPendingTimerLocked()
+			st.pushing = nil
+		}
+		st.mu.Unlock()
+		if row != nil {
+			s.pushItemUpdate(uid, row)
+		}
+		return nil, nil
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if !st.persist.recoverCompleted || !completedCatchPending(st) {
+		return nil, nil
+	}
+	uid = st.persist.uid
+	fish = st.Pending
 	ctx := s.dbCtx()
 	raw, _, err := s.DB.KVGet(ctx, fmt.Sprintf("catch-settlement:%d:%s", uid, strings.ToLower(fish.FishGUID)))
 	if errors.Is(err, sql.ErrNoRows) {
