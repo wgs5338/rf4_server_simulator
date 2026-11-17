@@ -362,15 +362,23 @@ func (d *DB) effectiveShopShelf(ctx context.Context, storeID string) (*shopShelf
 		return nil, err
 	}
 	base, source, def, known := resolveShopBase(storeID, catalog, recorded)
-	if source == shopShelfSourceKind && len(def.Brands) > 0 {
+	// Boat-station kind 4 uses common boat tickets: the witness template's
+	// brand is not the station operator brand, so brand filtering would erase
+	// the entire four-ticket shelf.
+	if source == shopShelfSourceKind && len(def.Brands) > 0 && def.Kind != 4 {
 		base, err = d.filterShopShelfByBrands(ctx, def, base)
 		if err != nil {
 			return nil, err
 		}
 	}
-	base, _, err = d.augmentShopShelf(ctx, def, base)
-	if err != nil {
-		return nil, err
+	// An explicit per-store shelf is authoritative. Do not append heuristic
+	// category supplements to it; this preserves exact recorded/curated counts
+	// (e.g. Tunguska's 93 recorded + 2 documented specials, and the 3-item cafe).
+	if len(def.Shelf) == 0 {
+		base, _, err = d.augmentShopShelf(ctx, def, base)
+		if err != nil {
+			return nil, err
+		}
 	}
 	overrides := map[string]shopOverrideValue{}
 	if len(base) > 0 {
