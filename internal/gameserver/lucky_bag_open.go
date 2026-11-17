@@ -17,7 +17,8 @@ import (
 const luckyBagOpenDefsKVKey = "lucky_bag_open_defs"
 
 // luckyBagOpenDef 为某个 2023 福袋或档位配置开袋奖励。
-// item_id 优先匹配具体袋子；tier 可作为同档位袋子的通用配置。
+// item_id 优先匹配具体袋子；tier 匹配静态字段 obifdihmcfn 的原始数值
+//（10、20…100），可作为同档位袋子的通用配置。
 // rewards 沿用 loot_box_defs 的 item_id/qty/weight 结构。
 type luckyBagOpenDef struct {
 	ItemID  string          `json:"item_id"`
