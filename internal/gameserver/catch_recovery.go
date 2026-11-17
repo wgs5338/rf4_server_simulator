@@ -65,8 +65,12 @@ func (s *Server) recoverCompletedCatchLocked(st *FishState) (*store.KeepnetEntry
 	}
 	uid := st.persist.uid
 	fish := st.Pending
-	luckyBagCatch := fish != nil && (isLuckyBagEventKey(fish.LocLevel) || isLuckyBagEventKey(s.currentLevel(uid)))
+	fishLevel := ""
+	if fish != nil {
+		fishLevel = fish.LocLevel
+	}
 	st.mu.Unlock()
+	luckyBagCatch := fish != nil && (isLuckyBagEventKey(fishLevel) || isLuckyBagEventKey(s.currentLevel(uid)))
 
 	// 福袋地图的上钩状态不能走普通鱼的 catch-settlement / keepnet 恢复路径。
 	// 若进程在 14/4 奖励提交后、状态快照清理前退出，按鱼 GUID 回执重取同一个福袋。
