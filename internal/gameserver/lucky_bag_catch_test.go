@@ -287,9 +287,9 @@ func TestLuckyBag14FourSettlementUsesEventBagHandler(t *testing.T) {
 		t.Fatalf("福袋地图 14/4 不应返回普通鱼对象，f0=%+v", value.Fields[0])
 	}
 	grants := value.Fields[8].Val
-	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 2 ||
-		grants.Items[1].Class != "cdmnfgijenb" {
-		t.Fatalf("14/4 奖励列表必须包含福袋实例且不包含普通鱼卡: %+v", grants)
+	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 1 ||
+		grants.Items[0] == nil || grants.Items[0].Class != "cdmnfgijenb" {
+		t.Fatalf("14/4 奖励列表必须只包含福袋实例且不包含普通鱼卡: %+v", grants)
 	}
 	keptBag, err := db.GetItemByGUID(context.Background(), bagInBackpack.GUID)
 	if err != nil || keptBag == nil {
