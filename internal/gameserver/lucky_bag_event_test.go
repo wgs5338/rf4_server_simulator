@@ -69,7 +69,7 @@ func TestLuckyBagDirectCastCannotBypassExpiredTicket(t *testing.T) {
 	ctxCast := &Ctx{
 		Sess: sess, Main: 14, Sub: 2,
 		Tree: rigRequestTree(t, proto.Guid("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")),
-		DecodeOK: true, Log: logging.Discard(), replyCapture: capture,
+		DecodeOK: true, ExpectResponse: true, Log: logging.Discard(), replyCapture: capture,
 	}
 	body, handled := hCast(ctxCast)
 	_, present, _, failed := capture.snapshot()
