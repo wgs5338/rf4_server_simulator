@@ -187,3 +187,87 @@ func TestLuckyBagUseReplayDoesNotDuplicateReward(t *testing.T) {
 		t.Fatalf("重复请求后福袋不应重新出现: %d", got)
 	}
 }
+
+
+// TestLuckyBagUseWithoutOfficialRewardsFailsClosed prevents an unverified
+// fallback to random shop stock when the official reward table is unavailable.
+func TestLuckyBagUseWithoutOfficialRewardsFailsClosed(t *testing.T) {
+	t.Parallel()
+	srv, db := newBundleTestServer(t)
+	const uid int64 = 7305
+	bag := luckyBagOpenTestSetup(t, srv, db, uid, "gift_bag_ny23_4", 997304, "qst_ny2023")
+	if _, err := db.SQL.Exec(`
+		INSERT OR IGNORE INTO item_def(numeric_id,item_id,category,kind,brand,attrs_json)
+		VALUES(?,?,?,?,?,?)`, 997305, "test_random_shop_bait", 27, "bait", "", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT OR IGNORE INTO item_catalog(item_id,name,name_zh,kind,numeric_id)
+		VALUES(?,?,?,?,?)`, "test_random_shop_bait", "Test Bait", "测试饵料", "bait", 997305); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT OR IGNORE INTO shop_item(store_id,item_id,silver,gold,stock)
+		VALUES(?,?,?,?,?)`, "test_shop", "test_random_shop_bait", 100, 0, 10); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := luckyBagUseTestCtx(srv, uid, bag)
+	body, handled := hItemUse(ctx)
+	_, present, _, failed := ctx.replyCapture.snapshot()
+	if !handled || body != nil || !present || !failed {
+		t.Fatalf("未配置官方奖励表时应安全拒绝开袋: handled=%v body=%d present=%v failed=%v",
+			handled, len(body), present, failed)
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); got != 1 {
+		t.Fatalf("奖励表缺失时福袋必须保留，实得 %d", got)
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "test_random_shop_bait"); got != 0 {
+		t.Fatalf("奖励表缺失时不能随机发商店物品，实得 %d", got)
+	}
+}
+
+// TestLuckyBagUseDoesNotFallbackWhenConfiguredRewardsAreIneligible ensures
+// invalid configured rewards cannot silently turn into random shop rewards.
+func TestLuckyBagUseDoesNotFallbackWhenConfiguredRewardsAreIneligible(t *testing.T) {
+	t.Parallel()
+	srv, db := newBundleTestServer(t)
+	const uid int64 = 7306
+	bag := luckyBagOpenTestSetup(t, srv, db, uid, "gift_bag_ny23_4", 997304, "qst_ny2023")
+	if _, err := db.SQL.Exec(`
+		INSERT OR IGNORE INTO item_def(numeric_id,item_id,category,kind,brand,attrs_json)
+		VALUES(?,?,?,?,?,?)`, 997306, "test_random_shop_bait", 27, "bait", "", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT OR IGNORE INTO item_catalog(item_id,name,name_zh,kind,numeric_id)
+		VALUES(?,?,?,?,?)`, "test_random_shop_bait", "Test Bait", "测试饵料", "bait", 997306); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT OR IGNORE INTO shop_item(store_id,item_id,silver,gold,stock)
+		VALUES(?,?,?,?,?)`, "test_shop", "test_random_shop_bait", 100, 0, 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT INTO kv(k,v) VALUES(?,?)
+		ON CONFLICT(k) DO UPDATE SET v=excluded.v`,
+		luckyBagOpenDefsKVKey,
+		`[{"item_id":"gift_bag_ny23_4","rewards":[{"item_id":"gift_bag_ny23_1","qty":1,"weight":1}]}]`); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := luckyBagUseTestCtx(srv, uid, bag)
+	body, handled := hItemUse(ctx)
+	_, present, _, failed := ctx.replyCapture.snapshot()
+	if !handled || body != nil || !present || !failed {
+		t.Fatalf("配置奖励不可发放时应安全拒绝: handled=%v body=%d present=%v failed=%v",
+			handled, len(body), present, failed)
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); got != 1 {
+		t.Fatalf("无有效奖励时福袋必须保留，实得 %d", got)
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "test_random_shop_bait"); got != 0 {
+		t.Fatalf("无有效奖励时不能随机发商店物品，实得 %d", got)
+	}
+}
