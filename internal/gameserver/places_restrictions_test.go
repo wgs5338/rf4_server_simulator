@@ -109,7 +109,6 @@ func TestPlaceRodAndRigViolation(t *testing.T) {
 	}
 }
 
-
 func TestLuckyBagAllowsAllRodsAndReels(t *testing.T) {
 	srv, db := newRigTestServer(t)
 	ctx := context.Background()
@@ -143,6 +142,9 @@ func TestLuckyBagAllowsAllRodsAndReels(t *testing.T) {
 	}
 	srv.rigSetComponent(ctx, uid, spinRod.GUID, 0, bigReel.GUID, 0,
 		rigSetOpts{ParentType: familyRod, EnforceCategory: true, SplitStack: true})
+	if ids := srv.rigGearIDs(ctx, uid, spinRod.GUID); ids.ReelGUID == "" {
+		t.Fatal("测试钓组未装上渔轮")
+	}
 	if reason := srv.placeRigViolation(ctx, uid, spinRod.GUID); reason != "" {
 		t.Fatalf("福袋地图不应限制整套钓组: %s", reason)
 	}
