@@ -38,7 +38,7 @@ var defaultLuckyBagDropDefs = []luckyBagDropDef{
 	{ItemID: "gift_bag_ny23_10", Weight: 1},
 }
 
-func luckyBagModelSupported(itemID string) bool {
+func luckyBagItemIDSupported(itemID string) bool {
 	for tier := 1; tier <= 10; tier++ {
 		if itemID == fmt.Sprintf("gift_bag_ny23_%d", tier) {
 			return true
@@ -82,7 +82,7 @@ func (s *Server) pickLuckyBagDropItem(ctx context.Context) (string, error) {
 		if itemID == "" || entry.Weight <= 0 {
 			continue
 		}
-		if !luckyBagModelSupported(itemID) {
+		if !luckyBagItemIDSupported(itemID) {
 			if s.log != nil {
 				s.log.Warn("福袋掉落表忽略没有客户端 prefab 的物品", "item", itemID)
 			}
