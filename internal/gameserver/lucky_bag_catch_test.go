@@ -44,7 +44,7 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 		}
 	}
 
-	// 默认池只取客户端登录器已有 2023 福袋系列。
+	// 默认池覆盖静态库中完整的 2023 福袋 1..10 档。
 	picked, err := srv.pickLuckyBagDropItem(ctx)
 	if err != nil {
 		t.Fatalf("读取默认福袋池: %v", err)
@@ -52,8 +52,14 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	if !luckyBagModelSupported(picked) {
 		t.Fatalf("默认福袋池抽到登录器没有 prefab 的物品: %s", picked)
 	}
-	if len(defaultLuckyBagDropDefs) != 4 {
-		t.Fatalf("默认福袋池应只包含 1/4/7/9 四种客户端 prefab，实得 %d", len(defaultLuckyBagDropDefs))
+	if len(defaultLuckyBagDropDefs) != 10 {
+		t.Fatalf("默认福袋池应覆盖完整 1..10 档，实得 %d", len(defaultLuckyBagDropDefs))
+	}
+	for tier := 1; tier <= 10; tier++ {
+		itemID := fmt.Sprintf("gift_bag_ny23_%d", tier)
+		if !luckyBagModelSupported(itemID) {
+			t.Fatalf("完整 2023 福袋档位未纳入默认池: %s", itemID)
+		}
 	}
 	for _, entry := range defaultLuckyBagDropDefs {
 		if !luckyBagModelSupported(entry.ItemID) {
