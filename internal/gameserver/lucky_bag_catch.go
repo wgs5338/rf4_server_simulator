@@ -22,30 +22,25 @@ type luckyBagDropDef struct {
 	Weight int64  `json:"weight"`
 }
 
-// 静态库中 2023 年福袋完整定义为 1..10 档；每档的
-// icjbboidfga 分别映射 gift_bag_1..gift_bag_10。
+// 静态库中有 2023 年 1..10 档定义，但客户端实际随本地 xmas-stalls100.bundle
+// 提供的活动 prefab 只有 1/4/7/9（gift_bag_ny23_{1,4,7,9}）。
+// 掉落池必须与客户端可实例化资源对齐，不能仅因静态 item_def 存在就发放缺 prefab 的档位。
 // 默认等权仅作本地可运行兜底，不代表官方掉率；管理员可通过
-// kv.lucky_bag_drop_defs 覆盖权重，取得官方掉率后应以实测值替换。
+// kv.lucky_bag_drop_defs 覆盖这四档权重，取得官方掉率后应以实测值替换。
 var defaultLuckyBagDropDefs = []luckyBagDropDef{
 	{ItemID: "gift_bag_ny23_1", Weight: 1},
-	{ItemID: "gift_bag_ny23_2", Weight: 1},
-	{ItemID: "gift_bag_ny23_3", Weight: 1},
 	{ItemID: "gift_bag_ny23_4", Weight: 1},
-	{ItemID: "gift_bag_ny23_5", Weight: 1},
-	{ItemID: "gift_bag_ny23_6", Weight: 1},
 	{ItemID: "gift_bag_ny23_7", Weight: 1},
-	{ItemID: "gift_bag_ny23_8", Weight: 1},
 	{ItemID: "gift_bag_ny23_9", Weight: 1},
-	{ItemID: "gift_bag_ny23_10", Weight: 1},
 }
 
 func luckyBagItemIDSupported(itemID string) bool {
-	for tier := 1; tier <= 10; tier++ {
-		if itemID == fmt.Sprintf("gift_bag_ny23_%d", tier) {
-			return true
-		}
+	switch itemID {
+	case "gift_bag_ny23_1", "gift_bag_ny23_4", "gift_bag_ny23_7", "gift_bag_ny23_9":
+		return true
+	default:
+		return false
 	}
-	return false
 }
 
 func (s *Server) luckyBagDropDefs(ctx context.Context) ([]luckyBagDropDef, error) {
