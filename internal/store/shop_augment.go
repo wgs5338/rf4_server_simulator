@@ -40,10 +40,11 @@ func shopBookIDs(def shopStoreDefinition) map[string]bool {
 }
 
 type shopItemMeta struct {
-	Category int64
-	Kind     string
-	Brand    string
-	Name     string
+	Category      int64
+	Kind          string // item_catalog.kind：用于价格中位数/系列估价
+	DefinitionKind string // item_def.kind：用于特殊门店品牌/子类筛选
+	Brand         string
+	Name          string
 }
 
 type shopSupplement struct {
@@ -69,7 +70,8 @@ func (d *DB) loadShopSupplement(ctx context.Context) error {
 		d.shopSupplement.prices = make(map[string]*ShopPrice, 4096)
 
 		rows, err := d.SQL.QueryContext(ctx, `
-			SELECT d.item_id, d.category, COALESCE(d.brand,''), COALESCE(c.kind,''), COALESCE(c.name,'')
+			SELECT d.item_id, d.category, COALESCE(d.brand,''), COALESCE(c.kind,''),
+			       COALESCE(d.kind,''), COALESCE(c.name,'')
 			FROM item_def d
 			LEFT JOIN item_catalog c ON c.item_id = d.item_id`)
 		if err != nil {
@@ -77,14 +79,16 @@ func (d *DB) loadShopSupplement(ctx context.Context) error {
 			return
 		}
 		for rows.Next() {
-			var id, brand, kind, name string
+			var id, brand, kind, definitionKind, name string
 			var cat int64
-			if err := rows.Scan(&id, &cat, &brand, &kind, &name); err != nil {
+			if err := rows.Scan(&id, &cat, &brand, &kind, &definitionKind, &name); err != nil {
 				rows.Close()
 				d.shopSupplement.err = err
 				return
 			}
-			d.shopSupplement.metas[id] = shopItemMeta{Category: cat, Kind: kind, Brand: brand, Name: name}
+			d.shopSupplement.metas[id] = shopItemMeta{
+				Category: cat, Kind: kind, DefinitionKind: definitionKind, Brand: brand, Name: name,
+			}
 		}
 		rowErr := rows.Err()
 		rows.Close()
@@ -267,7 +271,8 @@ func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shel
 			if !bookIDs[id] {
 				continue
 			}
-		} else if len(def.Brands) > 0 && !brandMatches(m.Brand, def.Brands) {
+		} else if len(def.Brands) > 0 &&
+			!brandMatches(m.Brand, def.Brands) && !brandMatches(m.DefinitionKind, def.Brands) {
 			continue
 		}
 		if p, ok := d.shopSupplement.prices[id]; ok && (p.Silver > 0 || p.Gold > 0) {
