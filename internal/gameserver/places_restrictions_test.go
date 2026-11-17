@@ -116,11 +116,7 @@ func TestLuckyBagAllowsAllRodsAndReels(t *testing.T) {
 	if _, err := db.EnsureProfile(ctx, uid); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetPlayerLocation(ctx, uid, "level_lucky_bag", "", 0); err != nil {
-		t.Fatal(err)
-	}
 
-	// 福袋地图不要求伸缩手竿；原有鲤竿、纺车竿和高规格渔轮均不做地点拦截。
 	carp, err := srv.CreateItem(ctx, uid, "carp_10046_360H", "backpack", 1)
 	if err != nil {
 		t.Fatal(err)
@@ -133,19 +129,29 @@ func TestLuckyBagAllowsAllRodsAndReels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if reason := srv.placeRodViolation(ctx, uid, carp.GUID); reason != "" {
-		t.Fatalf("福袋地图不应限制鲤竿: %s", reason)
-	}
-	if reason := srv.placeRodViolation(ctx, uid, spinRod.GUID); reason != "" {
-		t.Fatalf("福袋地图不应限制纺车竿: %s", reason)
-	}
 	srv.rigSetComponent(ctx, uid, spinRod.GUID, 0, bigReel.GUID, 0,
 		rigSetOpts{ParentType: familyRod, EnforceCategory: true, SplitStack: true})
 	if ids := srv.rigGearIDs(ctx, uid, spinRod.GUID); ids.ReelGUID == "" {
 		t.Fatal("测试钓组未装上渔轮")
 	}
-	if reason := srv.placeRigViolation(ctx, uid, spinRod.GUID); reason != "" {
-		t.Fatalf("福袋地图不应限制整套钓组: %s", reason)
+
+	// level_lucky_bag 是活动入口标识；level_ban 是底层惩戒池塘位置标识。
+	// 两者都按用户确认的要求，不限制鱼竿、鱼轮或整套钓组。
+	for _, levelKey := range []string{"level_lucky_bag", "level_ban"} {
+		if err := db.SetPlayerLocation(ctx, uid, levelKey, "", 0); err != nil {
+			t.Fatalf("%s: %v", levelKey, err)
+		}
+		if rules := srv.currentPlaceRules(ctx, uid); len(rules) != 0 {
+			t.Fatalf("%s 不应套用地点装备规则: %+v", levelKey, rules)
+		}
+		if reason := srv.placeRodViolation(ctx, uid, carp.GUID); reason != "" {
+			t.Fatalf("%s 不应限制鲤竿: %s", levelKey, reason)
+		}
+		if reason := srv.placeRodViolation(ctx, uid, spinRod.GUID); reason != "" {
+			t.Fatalf("%s 不应限制纺车竿: %s", levelKey, reason)
+		}
+		if reason := srv.placeRigViolation(ctx, uid, spinRod.GUID); reason != "" {
+			t.Fatalf("%s 不应限制整套钓组: %s", levelKey, reason)
+		}
 	}
 }
