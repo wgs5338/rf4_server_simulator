@@ -884,7 +884,7 @@ func hCastPrepare(ctx *Ctx) ([]byte, bool) {
 	if !srv.requireDB(ctx) {
 		return nil, false
 	}
-	if srv.currentLevel(ctx.Sess.Userid) == luckyBagMapKey {
+	if isLuckyBagEventKey(srv.currentLevel(ctx.Sess.Userid)) {
 		srv.expireLuckyBagSession(ctx.Sess, time.Now())
 		_, active, err := srv.luckyBagSession(ctx.Sess.pushCtx(), ctx.Sess.Userid, time.Now())
 		if err != nil {
@@ -997,6 +997,20 @@ func hCast(ctx *Ctx) ([]byte, bool) {
 	srv := ctx.Sess.Srv
 	if !srv.requireDB(ctx) {
 		return nil, false
+	}
+	// 14/2 可能在客户端跳过 14/1 直接发送；活动券必须在真正抛竿入口再验一次。
+	if isLuckyBagEventKey(srv.currentLevel(ctx.Sess.Userid)) {
+		srv.expireLuckyBagSession(ctx.Sess, time.Now())
+		_, active, err := srv.luckyBagSession(ctx.Sess.pushCtx(), ctx.Sess.Userid, time.Now())
+		if err != nil {
+			ctx.Log.Warn("福袋地图正式抛竿前读取入场券失败", "err", err)
+			return nil, false
+		}
+		if !active {
+			ctx.Log.Info("福袋入场券已过期，拒绝正式抛竿", "uid", ctx.Sess.Userid)
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期，请返回原地图")
+			return nil, true
+		}
 	}
 	// loc/spot：顶层 obj olieodeoaof 第一个非空 str = loc，第二个 u32 存 spot。
 	// 协议注释里该槽典型取值是 0..16 的 float（按 U32 承载位型），
