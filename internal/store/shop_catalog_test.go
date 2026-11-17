@@ -486,3 +486,51 @@ func TestCafeStoreShelfComesFromStoreDefinition(t *testing.T) {
 		t.Fatalf("咖啡馆货架来源=%q want=%q", shelf.Source, shopShelfSourceStore)
 	}
 }
+
+
+// TestBanFoodStoreUsesItemDefinitionKindFilter verifies the special
+// ny_bazaar_ban store can see items whose subtype is stored in item_def.kind.
+// These rows have a generic item_catalog.kind and an empty item_def.brand.
+func TestBanFoodStoreUsesItemDefinitionKindFilter(t *testing.T) {
+	db := openShopCatalogTestDB(t)
+	ctx := context.Background()
+	catalog, err := embeddedShopKindCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, ok := catalog.Stores["ny_bazaar_ban"]
+	if !ok || def.MapKey != "level_ban" || len(def.Brands) != 1 || def.Brands[0] != "banfood" {
+		t.Fatalf("惩戒池塘新年集市定义不符: %+v", def)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT INTO item_def(numeric_id,item_id,category,kind,brand,attrs_json) VALUES
+			(992001,'test_base_food',26,'food','','{}'),
+			(992002,'test_banfood_special',26,'banfood','','{}'),
+			(992003,'test_unrelated_food',26,'food','','{}');
+		INSERT INTO item_catalog(item_id,name,name_zh,kind,numeric_id) VALUES
+			('test_base_food','Base Food','基础食品','misc',992001),
+			('test_banfood_special','Ban Food','活动食品','misc',992002),
+			('test_unrelated_food','Other Food','其他食品','misc',992003);
+		INSERT INTO item_price(item_id,silver,gold,stock) VALUES
+			('test_base_food',100,0,10),
+			('test_banfood_special',50,0,10),
+			('test_unrelated_food',60,0,10);
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	base := []*ShopPrice{{ItemID: "test_base_food", Silver: 100, Stock: 10}}
+	got, added, err := db.augmentShopShelf(ctx, def, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 1 || len(got) != 2 {
+		t.Fatalf("banfood 专属货架补齐数=%d rows=%+v，期望只增加 1 件", added, got)
+	}
+	findShopPrice(t, got, "test_banfood_special")
+	for _, row := range got {
+		if row.ItemID == "test_unrelated_food" {
+			t.Fatal("不属于 banfood 的普通食品不应进入专属货架")
+		}
+	}
+}
