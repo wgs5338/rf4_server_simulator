@@ -122,7 +122,7 @@ func (s *Server) buyLuckyBagTicket(ctx *Ctx, requestedPlace string, gold bool, q
 	defer s.luckyBagMu.Unlock()
 
 	current := s.currentLevel(uid)
-	if current != luckyBagMapKey && s.luckyBagOnlinePlayers() >= luckyBagMaxPlayers {
+	if !s.canEnterLuckyBag(uid) {
 		ctx.Log.Info("福袋地图已满，拒绝新购票", "uid", uid, "capacity", luckyBagMaxPlayers)
 		ctx.ReplyFailure("System.InvalidOperationException", "福袋地图当前已满，请等待其他玩家退出")
 		return nil, true
@@ -183,7 +183,7 @@ func (s *Server) buyLuckyBagTicket(ctx *Ctx, requestedPlace string, gold bool, q
 	// 玩家若在旧券过期后仍停留在活动地图，下一张券仍以旧券记录的原地图为返回点。
 	if current == luckyBagMapKey || originLevel == luckyBagMapKey {
 		if oldErr == nil && old.OriginLevelKey != "" && validLevelKey(old.OriginLevelKey) {
-			originLevel, originScene, originSpot = old.OriginLevelKey, old.OriginScene, old.OriginSpot
+			originLevel, originScene, originSpot = travelLevelKey(old.OriginLevelKey), old.OriginScene, old.OriginSpot
 		} else {
 			originLevel, originScene, originSpot = spawnLevelKey, sceneForLevel(spawnLevelKey), 0
 		}
