@@ -165,7 +165,7 @@ func TestLuckyBagCompletedCatchRecoveryDoesNotKeepFish(t *testing.T) {
 	if err := db.SQL.QueryRow(`SELECT COUNT(*) FROM item WHERE uid=? AND item_id='gift_bag_ny23_1'`, uid).Scan(&bags); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SQL.QueryRow(`SELECT COUNT(*) FROM keepnet WHERE uid=?`, uid).Scan(&catches); err != nil {
+	if err := db.SQL.QueryRow(`SELECT COUNT(*) FROM keepnet_items WHERE uid=?`, uid).Scan(&catches); err != nil {
 		t.Fatal(err)
 	}
 	if bags != 1 || catches != 0 {
