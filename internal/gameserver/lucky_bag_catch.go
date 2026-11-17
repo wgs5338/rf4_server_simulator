@@ -301,8 +301,12 @@ func (s *Server) fishingEndLuckyBag(ctx *Ctx, st *FishState, pending *RolledFish
 		return nil, true
 	}
 	clearLuckyBagCatchState(st, pending)
+	bagItemID := ""
+	if bag != nil {
+		bagItemID = bag.ItemID
+	}
 	ctx.Log.Info("福袋地图钓获福袋", "uid", uid, "fish", shortGUID(pending.FishGUID),
-		"item", func() string { if bag != nil { return bag.ItemID }; return "" }(), "replayed", replayed)
+		"item", bagItemID, "replayed", replayed)
 	if bag != nil {
 		row := bag
 		sess := ctx.Sess
