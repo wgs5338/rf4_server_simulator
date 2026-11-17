@@ -24,7 +24,8 @@ type luckyBagDropDef struct {
 
 // 静态库中 2023 年福袋完整定义为 1..10 档；每档的
 // icjbboidfga 分别映射 gift_bag_1..gift_bag_10。
-// 默认等权抽取全部十档，管理员可通过 kv.lucky_bag_drop_defs 覆盖权重。
+// 默认等权仅作本地可运行兜底，不代表官方掉率；管理员可通过
+// kv.lucky_bag_drop_defs 覆盖权重，取得官方掉率后应以实测值替换。
 var defaultLuckyBagDropDefs = []luckyBagDropDef{
 	{ItemID: "gift_bag_ny23_1", Weight: 1},
 	{ItemID: "gift_bag_ny23_2", Weight: 1},
