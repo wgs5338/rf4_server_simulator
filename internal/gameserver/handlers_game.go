@@ -564,19 +564,26 @@ func hTravel(ctx *Ctx) ([]byte, bool) {
 	sess.Srv.expireLuckyBagSession(sess, time.Now())
 	lockedLuckyBag := false
 	if key == luckyBagMapKey {
+		// 锁内重新读取入场券：避免 keepalive 恰好在“检查有效”与“占位”之间
+		// 将券标记过期，导致过期玩家仍能切入活动地图。
+		sess.Srv.luckyBagMu.Lock()
+		lockedLuckyBag = true
 		_, active, err := sess.Srv.luckyBagSession(sess.pushCtx(), sess.Userid, time.Now())
 		if err != nil {
+			sess.Srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
 			ctx.Log.Warn("1/14 读取福袋入场券失败", "err", err)
 			return nil, false
 		}
 		if !active {
+			sess.Srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
 			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期或尚未购买")
 			return nil, true
 		}
-		sess.Srv.luckyBagMu.Lock()
-		lockedLuckyBag = true
 		if !sess.Srv.canEnterLuckyBag(sess.Userid) {
 			sess.Srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
 			ctx.ReplyFailure("System.InvalidOperationException", "福袋地图当前已满，请等待其他玩家退出")
 			return nil, true
 		}
@@ -668,19 +675,25 @@ func hEnterMap(ctx *Ctx) ([]byte, bool) {
 
 	lockedLuckyBag := false
 	if charge && level == luckyBagMapKey {
+		// 与 1/14 一样，在容量锁内复核券状态，避免到期任务与登录入图竞态。
+		srv.luckyBagMu.Lock()
+		lockedLuckyBag = true
 		_, active, err := srv.luckyBagSession(sess.pushCtx(), uid, time.Now())
 		if err != nil {
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
 			ctx.Log.Warn("1/13 读取福袋入场券失败", "err", err)
 			return nil, false
 		}
 		if !active {
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
 			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期或尚未购买")
 			return nil, true
 		}
-		srv.luckyBagMu.Lock()
-		lockedLuckyBag = true
 		if !srv.canEnterLuckyBag(uid) {
 			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
 			ctx.ReplyFailure("System.InvalidOperationException", "福袋地图当前已满，请等待其他玩家退出")
 			return nil, true
 		}
@@ -690,15 +703,17 @@ func hEnterMap(ctx *Ctx) ([]byte, bool) {
 			}
 		}()
 	} else if !charge && level == luckyBagMapKey {
-		// 登录恢复仍有效的活动地图时也占用 20 人容量；满员则恢复到购票前位置，
-		// 但不撤销仍有效的券，玩家可在有效期内稍后重新进入。
+		// 登录恢复仍有效的活动地图时也占用 30 人容量；在容量锁内复核券状态，
+		// 满员则恢复到购票前位置，但不撤销仍有效的券。
+		srv.luckyBagMu.Lock()
+		lockedLuckyBag = true
 		bag, active, err := srv.luckyBagSession(sess.pushCtx(), uid, time.Now())
 		if err != nil {
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
 			ctx.Log.Warn("1/13 读取福袋恢复位置失败", "err", err)
 			return nil, false
 		}
-		srv.luckyBagMu.Lock()
-		lockedLuckyBag = true
 		if !active || !srv.canEnterLuckyBag(uid) {
 			if bag != nil && bag.OriginLevelKey != "" && validLevelKey(bag.OriginLevelKey) && bag.OriginLevelKey != luckyBagMapKey {
 				level, scene, spot = bag.OriginLevelKey, bag.OriginScene, bag.OriginSpot
