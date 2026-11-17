@@ -112,7 +112,9 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 
 func TestLuckyBagCompletedCatchRecoveryDoesNotKeepFish(t *testing.T) {
 	t.Parallel()
-	srv, db := newRigTestServer(t)
+	db := openItemTestDB(t)
+	srv := NewServer(config.Game{Tunnel: config.Tunnel{PSK: "lucky-bag"}}, logging.Discard(), nil)
+	srv.SetDB(db)
 	ctx := context.Background()
 	const uid int64 = 1000084
 	if err := srv.EnsurePlayer(ctx, uid); err != nil {
