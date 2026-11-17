@@ -14,7 +14,7 @@ const (
 	luckyBagEventKey       = "level_lucky_bag"
 	luckyBagMapKey         = "level_ban"
 	luckyBagDurationSec    = int64(30 * 60)
-	luckyBagMaxPlayers     = 20
+	luckyBagMaxPlayers     = 30
 	luckyBagSilverPrice    = int64(100_000_000) // 1,000,000 银；钱包单位为分
 	luckyBagGoldPrice      = int64(800)         // 8 金；钱包单位为金币百分位
 )
@@ -57,6 +57,19 @@ func (s *Server) luckyBagOnlinePlayers() int {
 	return n
 }
 
+// luckyBagCapacityAllows 区分新进入者与已在地图中的重定位/恢复玩家。
+// 新进入者在当前人数达到上限时被拒绝；已计入在线人数的玩家可在上限内恢复，
+// 但不能让超出上限的异常状态继续扩张。
+func luckyBagCapacityAllows(count int, selfCounted bool) bool {
+	if count < 0 {
+		return false
+	}
+	if selfCounted {
+		return count <= luckyBagMaxPlayers
+	}
+	return count < luckyBagMaxPlayers
+}
+
 func (s *Server) canEnterLuckyBag(uid int64) bool {
 	if s == nil {
 		return false
@@ -72,12 +85,7 @@ func (s *Server) canEnterLuckyBag(uid int64) bool {
 			selfCounted = true
 		}
 	}
-	// 同图重定位/登录恢复时，当前 UID 已计入在线人数；其他人占满 20 个
-	// 名额后再恢复会得到 21，因此不能仅凭数据库上次位置跳过容量检查。
-	if selfCounted {
-		return count <= luckyBagMaxPlayers
-	}
-	return count < luckyBagMaxPlayers
+	return luckyBagCapacityAllows(count, selfCounted)
 }
 
 // buyLuckyBagTicket 处理 3/38 的福袋入场券购买。
