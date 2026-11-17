@@ -219,3 +219,83 @@ func TestLuckyBagCompletedCatchRecoveryDoesNotKeepFish(t *testing.T) {
 		t.Fatalf("恢复结果不符: bags=%d keepnet=%d，期望 1/0", bags, catches)
 	}
 }
+
+
+// TestLuckyBag14FourSettlementUsesEventBagHandler exercises the real 14/4 path,
+// not only the bag grant helper: the ordinary fish must never enter the result.
+func TestLuckyBag14FourSettlementUsesEventBagHandler(t *testing.T) {
+	t.Parallel()
+	srv, db := newBundleTestServer(t)
+	const uid int64 = 7310
+	bagInBackpack := luckyBagOpenTestSetup(t, srv, db, uid, "gift_bag_ny23_4", 997310, "qst_ny2023")
+	if _, err := db.SQL.Exec(`
+		INSERT INTO kv(k,v) VALUES(?,?)
+		ON CONFLICT(k) DO UPDATE SET v=excluded.v`,
+		luckyBagDropDefsKVKey, `[{"item_id":"gift_bag_ny23_4","weight":1}]`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if _, err := db.SQL.Exec(`
+		INSERT INTO lucky_bag_session(
+			uid,origin_level_key,origin_scene,origin_spot,expires_at,
+			paid_currency,paid_amount,purchases,purchased_ts,notified_ts)
+		VALUES(?,?,?,?,?,?,?,?,?,0)`,
+		uid, spawnLevelKey, sceneForLevel(spawnLevelKey), 0,
+		float64(now.Add(20*time.Minute).Unix()), "silver", luckyBagSilverPrice, 1,
+		float64(now.Unix())); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetPlayerLocation(context.Background(), uid, luckyBagMapKey, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	srv.setLevel(uid, luckyBagMapKey)
+
+	sess := newProbeSess(srv)
+	sess.Userid = uid
+	sess.closed.Store(false)
+	ctx := &Ctx{
+		Sess: sess, Main: 14, Sub: 4, DecodeOK: true, ExpectResponse: true,
+		Log: logging.Discard(), replyCapture: &ctxReplyCapture{},
+	}
+	st := srv.stateFor(uid)
+	st.mu.Lock()
+	st.Pending = &RolledFish{
+		FishGUID: "cccccccccccccccccccccccccccccccc",
+		LocLevel: luckyBagMapKey, Species: "perch", WeightG: 850,
+	}
+	st.Hooked = true
+	st.CastActive = true
+	st.InWater = true
+	st.Resolved = false
+	st.GearGuid = ""
+	st.mu.Unlock()
+
+	body, handled := hFishingEnd(ctx)
+	if !handled || len(body) == 0 {
+		t.Fatalf("14/4 福袋地图收竿失败: handled=%v bytes=%d", handled, len(body))
+	}
+	value, _, err := proto.DecodeValue(body, 0, srv.Table())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Kind != proto.KindObj || value.TypeID != 801 {
+		t.Fatalf("14/4 响应不是 801: kind=%s type=%d", value.Kind, value.TypeID)
+	}
+	if value.Fields[0].Kind != proto.KindNull {
+		t.Fatalf("福袋地图 14/4 不应返回普通鱼对象，f0=%v", value.Fields[0])
+	}
+	grants := value.Fields[8].Val
+	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 2 ||
+		grants.Items[1].Class != "cdmnfgijenb" {
+		t.Fatalf("14/4 奖励列表必须包含福袋实例且不包含普通鱼卡: %+v", grants)
+	}
+	if got := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); got != 2 {
+		t.Fatalf("原有福袋 + 本次钓获应为 2 个，实际 %d", got)
+	}
+	st.mu.Lock()
+	pending, hooked, resolved := st.Pending, st.Hooked, st.Resolved
+	st.mu.Unlock()
+	if pending != nil || hooked || !resolved {
+		t.Fatalf("14/4 后钓获状态未清理: pending=%v hooked=%v resolved=%v", pending, hooked, resolved)
+	}
+}
