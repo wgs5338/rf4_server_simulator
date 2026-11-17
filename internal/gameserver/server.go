@@ -62,6 +62,7 @@ type Server struct {
 	gearMenuState          map[int64]string // 钓具助手二级菜单：""=一级，"overload"/"stamina"=二级
 	levelMap               map[int64]string
 	levelMu                sync.Mutex
+	luckyBagMu             sync.Mutex
 	fishEcologyMu          sync.RWMutex
 	fishEcologyCache       map[string]fishEcologyProfile
 	fishEcologyCacheLoaded bool
