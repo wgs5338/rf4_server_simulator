@@ -629,6 +629,11 @@ func TestLuckyBagCategory73NativeWireClass(t *testing.T) {
 		VALUES(?,?,?,?,?,?)`, numericID, itemID, 73, "gift", "", attrs); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.SQL.Exec(`
+		INSERT INTO item_catalog(item_id,name,name_zh,kind,numeric_id)
+		VALUES(?,?,?,?,?)`, itemID, "gift bag wire probe", "福袋测试", "misc", numericID); err != nil {
+		t.Fatal(err)
+	}
 
 	it, err := srv.prepareNewItem(ctx, uid, itemID, "backpack", 1, "")
 	if err != nil {
