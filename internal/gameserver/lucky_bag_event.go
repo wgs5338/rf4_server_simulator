@@ -292,10 +292,10 @@ func (s *Server) expireLuckyBagSession(sess *Session, now time.Time) bool {
 		s.log.Warn("福袋入场券到期事务提交失败", "uid", sess.Userid, "err", err)
 		return false
 	}
-	if inEventMap {
-		s.setLevel(sess.Userid, originLevel)
-		sess.rememberWeather(originLevel, now.Unix())
-	}
+	// 在线场景下暂不改写内存 levelMap：客户端 LuckyBagReturn hook 会发起
+	// 1/14 返回请求；在它真正切图前，服务端仍把玩家视为处于活动地图，
+	// 这样过期后抛竿会被 hCastPrepare 拒绝。profile 已先持久化为原地图，
+	// 因此若断线，1/13 会直接恢复原位置。
 	sess.Push2_1()
 	s.log.Info("福袋入场券到期", "uid", sess.Userid, "was_in_map", inEventMap,
 		"origin", originLevel, "expires_at", v.ExpiresAt)
