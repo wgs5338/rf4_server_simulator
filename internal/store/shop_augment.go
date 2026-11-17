@@ -234,9 +234,32 @@ func brandMatches(brand string, brands []string) bool {
 	return false
 }
 
+// filterShopShelfByBrands removes unrelated rows from a generic kind template
+// before it is used as the fallback for a brand-specific store. Recorded shelves
+// and explicit per-store shelves are intentionally left untouched.
+func (d *DB) filterShopShelfByBrands(ctx context.Context, def shopStoreDefinition, shelf []*ShopPrice) ([]*ShopPrice, error) {
+	if len(def.Brands) == 0 || len(shelf) == 0 {
+		return shelf, nil
+	}
+	if err := d.loadShopSupplement(ctx); err != nil {
+		return shelf, err
+	}
+	out := make([]*ShopPrice, 0, len(shelf))
+	for _, row := range shelf {
+		if row == nil {
+			continue
+		}
+		meta, ok := d.shopSupplement.metas[row.ItemID]
+		if ok && (brandMatches(meta.Brand, def.Brands) || brandMatches(meta.DefinitionKind, def.Brands)) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
 // augmentShopShelf 补齐货架，返回补齐后的货架与新增条数。
 func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shelf []*ShopPrice) ([]*ShopPrice, int, error) {
-	if len(shelf) == 0 {
+	if len(shelf) == 0 && len(def.Brands) == 0 && len(def.Books) == 0 {
 		return shelf, 0, nil
 	}
 	if err := d.loadShopSupplement(ctx); err != nil {
@@ -252,6 +275,17 @@ func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shel
 		have[p.ItemID] = true
 		if m, ok := d.shopSupplement.metas[p.ItemID]; ok && !partCategories[m.Category] {
 			cats[m.Category] = true
+		}
+	}
+	// A brand-specific store can have no matching rows in the generic kind
+	// template (e.g. ny_bazaar_ban). Seed categories from that brand's static
+	// definitions so its own products can still populate the empty shelf.
+	if len(shelf) == 0 && len(def.Brands) > 0 {
+		for _, m := range d.shopSupplement.metas {
+			if !partCategories[m.Category] &&
+				(brandMatches(m.Brand, def.Brands) || brandMatches(m.DefinitionKind, def.Brands)) {
+				cats[m.Category] = true
+			}
 		}
 	}
 	if len(bookIDs) > 0 {
