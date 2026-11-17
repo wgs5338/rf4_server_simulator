@@ -25,17 +25,22 @@ type luckyBagDropDef struct {
 // 客户端登录器内置的是 2023 福袋模型（1/4/7/9 四种 prefab）；
 // 静态库保留完整的 1..10 系列。未配置权重时先等权抽取，
 // 管理员可通过 kv.lucky_bag_drop_defs 覆盖，不把未知物品属性误当掉率。
+// 登录器实际内置的 2023 福袋 prefab 只有 1/4/7/9 四种；掉落池只发放
+// 有对应客户端模型的物品，避免 2/3/5/6/8/10 在背包或结算界面显示缺模。
 var defaultLuckyBagDropDefs = []luckyBagDropDef{
 	{ItemID: "gift_bag_ny23_1", Weight: 1},
-	{ItemID: "gift_bag_ny23_2", Weight: 1},
-	{ItemID: "gift_bag_ny23_3", Weight: 1},
 	{ItemID: "gift_bag_ny23_4", Weight: 1},
-	{ItemID: "gift_bag_ny23_5", Weight: 1},
-	{ItemID: "gift_bag_ny23_6", Weight: 1},
 	{ItemID: "gift_bag_ny23_7", Weight: 1},
-	{ItemID: "gift_bag_ny23_8", Weight: 1},
 	{ItemID: "gift_bag_ny23_9", Weight: 1},
-	{ItemID: "gift_bag_ny23_10", Weight: 1},
+}
+
+func luckyBagModelSupported(itemID string) bool {
+	switch itemID {
+	case "gift_bag_ny23_1", "gift_bag_ny23_4", "gift_bag_ny23_7", "gift_bag_ny23_9":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) luckyBagDropDefs(ctx context.Context) ([]luckyBagDropDef, error) {
@@ -71,6 +76,12 @@ func (s *Server) pickLuckyBagDropItem(ctx context.Context) (string, error) {
 	for _, entry := range entries {
 		itemID := strings.TrimSpace(entry.ItemID)
 		if itemID == "" || entry.Weight <= 0 {
+			continue
+		}
+		if !luckyBagModelSupported(itemID) {
+			if s.log != nil {
+				s.log.Warn("福袋掉落表忽略没有客户端 prefab 的物品", "item", itemID)
+			}
 			continue
 		}
 		def, derr := s.DB.GetItemDefByItemID(ctx, itemID)
