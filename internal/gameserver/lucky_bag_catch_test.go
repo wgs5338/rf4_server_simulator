@@ -3,7 +3,6 @@ package gameserver
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -143,8 +142,9 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解码福袋结算响应: %v", err)
 	}
-	if decoded.Kind != proto.KindObj || decoded.Fields[0].Kind != proto.KindNull {
-		t.Fatalf("福袋结算不应返回普通鱼对象: kind=%s f0=%v", decoded.Kind, decoded.Fields[0])
+	if decoded.Kind != proto.KindObj || len(decoded.Fields) == 0 ||
+		decoded.Fields[0].Val == nil || decoded.Fields[0].Val.Kind != proto.KindNull {
+		t.Fatalf("福袋结算不应返回普通鱼对象: kind=%s f0=%+v", decoded.Kind, decoded.Fields[0])
 	}
 	grants := decoded.Fields[8].Val
 	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 2 || grants.Items[1].Class != "cdmnfgijenb" {
@@ -282,13 +282,17 @@ func TestLuckyBag14FourSettlementUsesEventBagHandler(t *testing.T) {
 	if value.Kind != proto.KindObj || value.TypeID != 801 {
 		t.Fatalf("14/4 响应不是 801: kind=%s type=%d", value.Kind, value.TypeID)
 	}
-	if value.Fields[0].Kind != proto.KindNull {
-		t.Fatalf("福袋地图 14/4 不应返回普通鱼对象，f0=%v", value.Fields[0])
+	if len(value.Fields) == 0 || value.Fields[0].Val == nil || value.Fields[0].Val.Kind != proto.KindNull {
+		t.Fatalf("福袋地图 14/4 不应返回普通鱼对象，f0=%+v", value.Fields[0])
 	}
 	grants := value.Fields[8].Val
 	if grants == nil || grants.Kind != proto.KindArgs || len(grants.Items) != 2 ||
 		grants.Items[1].Class != "cdmnfgijenb" {
 		t.Fatalf("14/4 奖励列表必须包含福袋实例且不包含普通鱼卡: %+v", grants)
+	}
+	keptBag, err := db.GetItemByGUID(context.Background(), bagInBackpack.GUID)
+	if err != nil || keptBag == nil {
+		t.Fatalf("原有福袋实例应保持不变: bag=%+v err=%v", keptBag, err)
 	}
 	if got := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); got != 2 {
 		t.Fatalf("原有福袋 + 本次钓获应为 2 个，实际 %d", got)
