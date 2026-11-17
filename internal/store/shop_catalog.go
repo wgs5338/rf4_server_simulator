@@ -362,6 +362,12 @@ func (d *DB) effectiveShopShelf(ctx context.Context, storeID string) (*shopShelf
 		return nil, err
 	}
 	base, source, def, known := resolveShopBase(storeID, catalog, recorded)
+	if source == shopShelfSourceKind && len(def.Brands) > 0 {
+		base, err = d.filterShopShelfByBrands(ctx, def, base)
+		if err != nil {
+			return nil, err
+		}
+	}
 	base, _, err = d.augmentShopShelf(ctx, def, base)
 	if err != nil {
 		return nil, err
