@@ -49,8 +49,16 @@ func TestLuckyBagCatchGrantIsBagOnlyAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取默认福袋池: %v", err)
 	}
-	if !strings.HasPrefix(picked, "gift_bag_ny23_") {
-		t.Fatalf("默认福袋池抽到非 2023 定义: %s", picked)
+	if !luckyBagModelSupported(picked) {
+		t.Fatalf("默认福袋池抽到登录器没有 prefab 的物品: %s", picked)
+	}
+	if len(defaultLuckyBagDropDefs) != 4 {
+		t.Fatalf("默认福袋池应只包含 1/4/7/9 四种客户端 prefab，实得 %d", len(defaultLuckyBagDropDefs))
+	}
+	for _, entry := range defaultLuckyBagDropDefs {
+		if !luckyBagModelSupported(entry.ItemID) {
+			t.Fatalf("默认掉落池含未支持 prefab: %s", entry.ItemID)
+		}
 	}
 
 	// 用单一权重项固定测试结果，避免随机抽样影响断言。
