@@ -121,6 +121,11 @@ func (s *Server) currentPlaceRules(ctx context.Context, uid int64) []placeGearRu
 	if err != nil || loc == nil {
 		return nil
 	}
+	// 福袋活动地图不要求专用伸缩手竿；竿、轮及整套钓组均不做地点限制。
+	// 该豁免集中在规则入口，17/7、14/1、14/2 三处校验自动保持一致。
+	if loc.LevelKey == "level_lucky_bag" {
+		return nil
+	}
 	return restrictionsForLevel(loc.LevelKey)
 }
 
