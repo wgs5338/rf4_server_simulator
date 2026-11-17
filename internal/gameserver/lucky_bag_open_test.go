@@ -5,14 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"rf4server/internal/logging"
 	"rf4server/internal/proto"
+	"rf4server/internal/store"
 )
-
-func seedLuckyBagOpenDef(t *testing.T, db interface {
-	Exec(string, ...any) (interface{ RowsAffected() (int64, error) }, error)
-}, _ string) {
-	// Kept out of use: the concrete store.DB SQL handle is seeded directly in each test.
-}
 
 func luckyBagOpenTestSetup(t *testing.T, srv *Server, db *store.DB, uid int64, itemID string, numericID int64, quest string) *store.Item {
 	t.Helper()
@@ -41,11 +37,31 @@ func luckyBagOpenTestSetup(t *testing.T, srv *Server, db *store.DB, uid int64, i
 }
 
 func luckyBagUseTestCtx(srv *Server, uid int64, row *store.Item) *Ctx {
-	c := economyTestCtx(srv, uid, proto.Args524(proto.U64(0), proto.Guid(row.GUID)))
-	c.Main, c.Sub = 4, 8
-	c.ExpectResponse = true
-	c.Sess.closed.Store(false)
-	return c
+	sess := newProbeSess(srv)
+	sess.Userid = uid
+	sess.closed.Store(false)
+	tree := proto.Args524(proto.U64(0), proto.Guid(row.GUID))
+	body, err := proto.EncodeValue(tree, srv.Table())
+	if err != nil {
+		panic(err)
+	}
+	return &Ctx{Sess: sess, Main: 4, Sub: 8, Tree: tree, Body: body,
+		DecodeOK: true, ExpectResponse: true, Log: logging.Discard(), replyCapture: &ctxReplyCapture{}}
+}
+
+func luckyBagOpenItemQty(t *testing.T, db *store.DB, uid int64, itemID string) int64 {
+	t.Helper()
+	rows, err := db.ListItemsByContainer(context.Background(), uid, "backpack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total int64
+	for _, row := range rows {
+		if row.ItemID == itemID {
+			total += row.Qty
+		}
+	}
+	return total
 }
 
 func TestLuckyBagUseOpensAndGrantsConfiguredReward(t *testing.T) {
@@ -79,7 +95,7 @@ func TestLuckyBagUseOpensAndGrantsConfiguredReward(t *testing.T) {
 	if removed == nil || removed.Kind != proto.KindGuidArr || len(removed.Items) != 1 || removed.Items[0].Hex != bag.GUID {
 		t.Fatalf("800.f2 应移除福袋 GUID: %+v", removed)
 	}
-	if n := itemCount(t, db, uid, "gift_bag_ny23_4"); n != 0 {
+	if n := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); n != 0 {
 		t.Fatalf("开袋后福袋仍存在: %d", n)
 	}
 	reward, err := db.ListItemsByContainer(context.Background(), uid, "backpack")
@@ -106,7 +122,7 @@ func TestLuckyBagUseLeavesOtherEventBagsUntouched(t *testing.T) {
 	if !handled || len(body) == 0 {
 		t.Fatalf("非 2023 物品应走通用 800 回执: handled=%v bytes=%d", handled, len(body))
 	}
-	if n := itemCount(t, db, uid, "gift_bag_ny22_4"); n != 1 {
+	if n := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny22_4"); n != 1 {
 		t.Fatalf("非 2023 福袋不应被打开: %d", n)
 	}
 }
@@ -133,10 +149,10 @@ func TestLuckyBagUseRollbackKeepsBagWhenRewardInsertFails(t *testing.T) {
 	if !handled || body != nil || !present || !failed {
 		t.Fatalf("奖励入库失败应返回失败回执: handled=%v body=%d present=%v failed=%v", handled, len(body), present, failed)
 	}
-	if n := itemCount(t, db, uid, "gift_bag_ny23_4"); n != 1 {
+	if n := luckyBagOpenItemQty(t, db, uid, "gift_bag_ny23_4"); n != 1 {
 		t.Fatalf("奖励事务回滚后福袋应保留: %d", n)
 	}
-	if n := itemCount(t, db, uid, "food_egg"); n != 0 {
+	if n := luckyBagOpenItemQty(t, db, uid, "food_egg"); n != 0 {
 		t.Fatalf("奖励事务回滚后不应残留奖励: %d", n)
 	}
 }
