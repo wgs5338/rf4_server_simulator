@@ -663,7 +663,12 @@ func TestLuckyBagCategory73NativeWireClass(t *testing.T) {
 	if tree.Fields[guidIdx].Hex != it.GUID {
 		t.Fatalf("福袋 GUID=%s, want %s", tree.Fields[guidIdx].Hex, it.GUID)
 	}
-	if got := tree.Fields[idIdx].Num; got != uint64(numericID) {
+	gotNumericID := tree.Fields[idIdx].Num
+	if gotNumericID == nil || *gotNumericID != uint64(numericID) {
+		var got uint64
+		if gotNumericID != nil {
+			got = *gotNumericID
+		}
 		t.Fatalf("福袋 numeric ID=%d, want %d", got, numericID)
 	}
 	body, err := proto.EncodeValue(tree, srv.Table())
