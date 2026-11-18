@@ -323,9 +323,11 @@ func (d *DB) ListAdminStores(ctx context.Context) ([]*AdminStoreView, error) {
 	out := make([]*AdminStoreView, 0, len(storeIDs))
 	for _, storeID := range storeIDs {
 		base, source, def, known := resolveShopBase(storeID, catalog, recorded)
-		base, _, err = d.augmentShopShelf(ctx, def, base)
-		if err != nil {
-			return nil, err
+		if len(def.Shelf) == 0 {
+			base, _, err = d.augmentShopShelf(ctx, def, base)
+			if err != nil {
+				return nil, err
+			}
 		}
 		overrides := allOverrides[storeID]
 		effective := applyShopOverrides(base, overrides)

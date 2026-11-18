@@ -3,6 +3,9 @@ package gameserver
 import (
 	"context"
 	"testing"
+
+	"rf4server/internal/logging"
+	"rf4server/internal/proto"
 )
 
 // 水域装备限制（服务端镜像客户端 ebjhdhighdj 注册表）。
@@ -106,5 +109,114 @@ func TestPlaceRodAndRigViolation(t *testing.T) {
 		rigSetOpts{ParentType: familyRod, EnforceCategory: true, SplitStack: true})
 	if reason := srv.placeRigViolation(ctx, uid, spinRod.GUID); reason != "" {
 		t.Fatalf("铜壶抛投 size5 纺车轮钓组不应被拒: %s", reason)
+	}
+}
+
+func TestLuckyBagAllowsAllRodsAndReels(t *testing.T) {
+	srv, db := newRigTestServer(t)
+	ctx := context.Background()
+	const uid = int64(1000001)
+	if _, err := db.EnsureProfile(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+
+	carp, err := srv.CreateItem(ctx, uid, "carp_10046_360H", "backpack", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spinRod, err := srv.CreateItem(ctx, uid, "spin_10158_M100HH", "backpack", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bigReel, err := srv.CreateItem(ctx, uid, "spin_7016", "backpack", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.rigSetComponent(ctx, uid, spinRod.GUID, 0, bigReel.GUID, 0,
+		rigSetOpts{ParentType: familyRod, EnforceCategory: true, SplitStack: true})
+	if ids := srv.rigGearIDs(ctx, uid, spinRod.GUID); ids.ReelGUID == "" {
+		t.Fatal("测试钓组未装上渔轮")
+	}
+
+	// level_lucky_bag 是活动入口标识；level_ban 是底层惩戒池塘位置标识。
+	// 两者都按用户确认的要求，不限制鱼竿、鱼轮或整套钓组。
+	for _, levelKey := range []string{"level_lucky_bag", "level_ban"} {
+		if err := db.SetPlayerLocation(ctx, uid, levelKey, "", 0); err != nil {
+			t.Fatalf("%s: %v", levelKey, err)
+		}
+		if rules := srv.currentPlaceRules(ctx, uid); len(rules) != 0 {
+			t.Fatalf("%s 不应套用地点装备规则: %+v", levelKey, rules)
+		}
+		if reason := srv.placeRodViolation(ctx, uid, carp.GUID); reason != "" {
+			t.Fatalf("%s 不应限制鲤竿: %s", levelKey, reason)
+		}
+		if reason := srv.placeRodViolation(ctx, uid, spinRod.GUID); reason != "" {
+			t.Fatalf("%s 不应限制纺车竿: %s", levelKey, reason)
+		}
+		if reason := srv.placeRigViolation(ctx, uid, spinRod.GUID); reason != "" {
+			t.Fatalf("%s 不应限制整套钓组: %s", levelKey, reason)
+		}
+	}
+}
+
+
+// TestLuckyBagMapAllowsRestrictedRodThroughTakeHandler verifies the actual
+// 17/7 path accepts a rod that is banned on an ordinary restricted water.
+// The event map exception must not weaken restrictions on other waters.
+func TestLuckyBagMapAllowsRestrictedRodThroughTakeHandler(t *testing.T) {
+	srv, db := newRigTestServer(t)
+	ctx := context.Background()
+	const uid int64 = 1000001
+	if _, err := db.EnsureProfile(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	rod, err := srv.CreateItem(ctx, uid, "carp_10046_360H", "backpack", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := newProbeSess(srv)
+	sess.Userid = uid
+
+	for _, levelKey := range []string{"level_lucky_bag", "level_ban"} {
+		if err := db.SetPlayerLocation(ctx, uid, levelKey, "", 0); err != nil {
+			t.Fatalf("%s: %v", levelKey, err)
+		}
+		srv.setLevel(uid, levelKey)
+		body, handled := hRodTake(&Ctx{
+			Sess: sess, Main: 17, Sub: 7,
+			Tree: rigRequestTree(t, proto.Guid(rod.GUID)),
+			DecodeOK: true, Log: logging.Discard(),
+		})
+		if !handled || len(body) == 0 {
+			t.Fatalf("%s: 17/7 应允许取普通鱼竿，handled=%v bytes=%d", levelKey, handled, len(body))
+		}
+		value, _, err := proto.DecodeValue(body, 0, srv.Table())
+		if err != nil {
+			t.Fatalf("%s: 解码 17/7 响应: %v", levelKey, err)
+		}
+		if got := value.Field(0).GuidHex(); got != rod.GUID {
+			t.Fatalf("%s: 17/7 返回竿 GUID=%q，期望 %q", levelKey, got, rod.GUID)
+		}
+	}
+
+	// 负向对照：普通水域的原有限制仍然生效。
+	if err := db.SetPlayerLocation(ctx, uid, "level_018_moskitnoe", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	srv.setLevel(uid, "level_018_moskitnoe")
+	body, handled := hRodTake(&Ctx{
+		Sess: sess, Main: 17, Sub: 7,
+		Tree: rigRequestTree(t, proto.Guid(rod.GUID)),
+		DecodeOK: true, Log: logging.Discard(),
+	})
+	if !handled || len(body) == 0 {
+		t.Fatalf("铜湖 17/7 应返回拒绝后的手持上下文，handled=%v bytes=%d", handled, len(body))
+	}
+	value, _, err := proto.DecodeValue(body, 0, srv.Table())
+	if err != nil {
+		t.Fatalf("解码铜湖 17/7 响应: %v", err)
+	}
+	if got := value.Field(0).GuidHex(); got != zeroGUID {
+		t.Fatalf("铜湖不应允许受限鲤竿，实际取到 %q", got)
 	}
 }

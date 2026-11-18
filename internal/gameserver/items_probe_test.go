@@ -595,3 +595,91 @@ func TestWorkshopToolsAreNotFishingLine(t *testing.T) {
 		}
 	}
 }
+
+
+// TestLuckyBagCategory73NativeWireClass verifies the native item-definition/instance
+// pair and the full inventory serialization path for a category-73 New Year gift bag.
+func TestLuckyBagCategory73NativeWireClass(t *testing.T) {
+	t.Parallel()
+	if got := wiregen.ClassTypeID["iokojilbdbc"]; got != 13010 {
+		t.Fatalf("category-73 definition class typeID=%d, want 13010", got)
+	}
+	if got := wiregen.ClassTypeID["cdmnfgijenb"]; got != 13011 {
+		t.Fatalf("category-73 instance class typeID=%d, want 13011", got)
+	}
+	for _, key := range []string{"fpolceicapf", "lpheefmebpg", "icjbboidfga", "obifdihmcfn"} {
+		if fieldIdxByCS("iokojilbdbc", key) < 0 {
+			t.Fatalf("category-73 definition class is missing attribute %q", key)
+		}
+	}
+
+	db := openItemTestDB(t)
+	ctx := context.Background()
+	srv := NewServer(config.Game{Tunnel: config.Tunnel{PSK: "lucky-bag"}}, logging.Discard(), nil)
+	srv.SetDB(db)
+	const uid int64 = 1000073
+	if err := srv.EnsurePlayer(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	const itemID = "gift_bag_wire_probe"
+	const numericID int64 = 990073
+	attrs := `{"fpolceicapf":null,"lpheefmebpg":"qst_ny2024","icjbboidfga":"gift_bag_1","kmgbnidogek":0,"obifdihmcfn":10,"dlmaaeecbci":0,"dmcgapifbdm":null,"hgaijieklek":16793600,"chfafilgifj":null}`
+	if _, err := db.SQL.Exec(`
+		INSERT INTO item_def(numeric_id,item_id,category,kind,brand,attrs_json)
+		VALUES(?,?,?,?,?,?)`, numericID, itemID, 73, "gift", "", attrs); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT INTO item_catalog(item_id,name,name_zh,kind,numeric_id)
+		VALUES(?,?,?,?,?)`, itemID, "gift bag wire probe", "福袋测试", "misc", numericID); err != nil {
+		t.Fatal(err)
+	}
+
+	it, err := srv.prepareNewItem(ctx, uid, itemID, "backpack", 1, "")
+	if err != nil {
+		t.Fatalf("prepareNewItem category73: %v", err)
+	}
+	if err := db.InsertItem(ctx, it); err != nil {
+		t.Fatalf("InsertItem category73: %v", err)
+	}
+	if it.WireClass != "cdmnfgijenb" || it.TypeID != 13011 {
+		t.Fatalf("福袋实例 wire=%s/%d, want cdmnfgijenb/13011", it.WireClass, it.TypeID)
+	}
+	if it.Qty != 1 {
+		t.Fatalf("福袋应逐件生成独立实例，qty=%d", it.Qty)
+	}
+	tree, err := srv.ItemToTree(ctx, it)
+	if err != nil {
+		t.Fatalf("ItemToTree category73: %v", err)
+	}
+	if tree.Kind != proto.KindObj || tree.Class != "cdmnfgijenb" || tree.TypeID != 13011 {
+		t.Fatalf("福袋树形不符: kind=%s class=%s typeID=%d", tree.Kind, tree.Class, tree.TypeID)
+	}
+	guidIdx := fieldIdxByCS(tree.Class, csGUID)
+	idIdx := fieldIdxByCS(tree.Class, csNumericID)
+	if guidIdx < 0 || idIdx < 0 {
+		t.Fatal("福袋实例缺少 GUID 或 numeric ID 字段")
+	}
+	if tree.Fields[guidIdx].Hex != it.GUID {
+		t.Fatalf("福袋 GUID=%s, want %s", tree.Fields[guidIdx].Hex, it.GUID)
+	}
+	gotNumericID := tree.Fields[idIdx].Num
+	if gotNumericID == nil || *gotNumericID != uint64(numericID) {
+		var got uint64
+		if gotNumericID != nil {
+			got = *gotNumericID
+		}
+		t.Fatalf("福袋 numeric ID=%d, want %d", got, numericID)
+	}
+	body, err := proto.EncodeValue(tree, srv.Table())
+	if err != nil {
+		t.Fatalf("福袋 wire 编码失败: %v", err)
+	}
+	decoded, _, err := proto.DecodeValue(body, 0, srv.Table())
+	if err != nil {
+		t.Fatalf("福袋 wire 回解失败: %v", err)
+	}
+	if decoded.Kind != proto.KindObj || decoded.Class != "cdmnfgijenb" || decoded.TypeID != 13011 {
+		t.Fatalf("福袋 wire 回解类型不符: kind=%s class=%s typeID=%d", decoded.Kind, decoded.Class, decoded.TypeID)
+	}
+}

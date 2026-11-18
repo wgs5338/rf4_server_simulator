@@ -40,10 +40,11 @@ func shopBookIDs(def shopStoreDefinition) map[string]bool {
 }
 
 type shopItemMeta struct {
-	Category int64
-	Kind     string
-	Brand    string
-	Name     string
+	Category       int64
+	Kind           string // item_catalog.kind：用于价格中位数/系列估价
+	DefinitionKind string // item_def.kind：用于特殊门店品牌/子类筛选
+	Brand          string
+	Name           string
 }
 
 type shopSupplement struct {
@@ -69,7 +70,8 @@ func (d *DB) loadShopSupplement(ctx context.Context) error {
 		d.shopSupplement.prices = make(map[string]*ShopPrice, 4096)
 
 		rows, err := d.SQL.QueryContext(ctx, `
-			SELECT d.item_id, d.category, COALESCE(d.brand,''), COALESCE(c.kind,''), COALESCE(c.name,'')
+			SELECT d.item_id, d.category, COALESCE(d.brand,''), COALESCE(c.kind,''),
+			       COALESCE(d.kind,''), COALESCE(c.name,'')
 			FROM item_def d
 			LEFT JOIN item_catalog c ON c.item_id = d.item_id`)
 		if err != nil {
@@ -77,14 +79,16 @@ func (d *DB) loadShopSupplement(ctx context.Context) error {
 			return
 		}
 		for rows.Next() {
-			var id, brand, kind, name string
+			var id, brand, kind, definitionKind, name string
 			var cat int64
-			if err := rows.Scan(&id, &cat, &brand, &kind, &name); err != nil {
+			if err := rows.Scan(&id, &cat, &brand, &kind, &definitionKind, &name); err != nil {
 				rows.Close()
 				d.shopSupplement.err = err
 				return
 			}
-			d.shopSupplement.metas[id] = shopItemMeta{Category: cat, Kind: kind, Brand: brand, Name: name}
+			d.shopSupplement.metas[id] = shopItemMeta{
+				Category: cat, Kind: kind, DefinitionKind: definitionKind, Brand: brand, Name: name,
+			}
 		}
 		rowErr := rows.Err()
 		rows.Close()
@@ -230,9 +234,32 @@ func brandMatches(brand string, brands []string) bool {
 	return false
 }
 
+// filterShopShelfByBrands removes unrelated rows from a generic kind template
+// before it is used as the fallback for a brand-specific store. Recorded shelves
+// and explicit per-store shelves are intentionally left untouched.
+func (d *DB) filterShopShelfByBrands(ctx context.Context, def shopStoreDefinition, shelf []*ShopPrice) ([]*ShopPrice, error) {
+	if len(def.Brands) == 0 || len(shelf) == 0 {
+		return shelf, nil
+	}
+	if err := d.loadShopSupplement(ctx); err != nil {
+		return shelf, err
+	}
+	out := make([]*ShopPrice, 0, len(shelf))
+	for _, row := range shelf {
+		if row == nil {
+			continue
+		}
+		meta, ok := d.shopSupplement.metas[row.ItemID]
+		if ok && (brandMatches(meta.Brand, def.Brands) || brandMatches(meta.DefinitionKind, def.Brands)) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
 // augmentShopShelf 补齐货架，返回补齐后的货架与新增条数。
 func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shelf []*ShopPrice) ([]*ShopPrice, int, error) {
-	if len(shelf) == 0 {
+	if len(shelf) == 0 && len(def.Brands) == 0 && len(def.Books) == 0 {
 		return shelf, 0, nil
 	}
 	if err := d.loadShopSupplement(ctx); err != nil {
@@ -248,6 +275,17 @@ func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shel
 		have[p.ItemID] = true
 		if m, ok := d.shopSupplement.metas[p.ItemID]; ok && !partCategories[m.Category] {
 			cats[m.Category] = true
+		}
+	}
+	// A brand-specific store can have no matching rows in the generic kind
+	// template (e.g. ny_bazaar_ban). Seed categories from that brand's static
+	// definitions so its own products can still populate the empty shelf.
+	if len(shelf) == 0 && len(def.Brands) > 0 {
+		for _, m := range d.shopSupplement.metas {
+			if !partCategories[m.Category] &&
+				(brandMatches(m.Brand, def.Brands) || brandMatches(m.DefinitionKind, def.Brands)) {
+				cats[m.Category] = true
+			}
 		}
 	}
 	if len(bookIDs) > 0 {
@@ -267,7 +305,8 @@ func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shel
 			if !bookIDs[id] {
 				continue
 			}
-		} else if len(def.Brands) > 0 && !brandMatches(m.Brand, def.Brands) {
+		} else if len(def.Brands) > 0 &&
+			!brandMatches(m.Brand, def.Brands) && !brandMatches(m.DefinitionKind, def.Brands) {
 			continue
 		}
 		if p, ok := d.shopSupplement.prices[id]; ok && (p.Silver > 0 || p.Gold > 0) {

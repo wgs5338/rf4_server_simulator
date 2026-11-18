@@ -41,9 +41,9 @@ type lootBoxDef struct {
 	Chance  float64         `json:"chance"` // 每次钓获触发的概率 0..1
 	Rewards []lootBoxReward `json:"rewards"`
 	// CarrierItem 可选：开袋时额外发放的"可见载体"物品。
-	// category 73 的 gift_bag 没有 wire class 映射，直接发会让客户端物化出错，
-	// 因此默认不发；需要"背包里看得见一个袋子"时，把这里填成可正常显示的道具
-	// （例如 category 55 的套盒）。
+	// category 73 的 gift_bag 虽已确认使用原生实例类 cdmnfgijenb/13011，
+	// 但其活动任务与领奖流程独立于通用 loot box；通用载体白名单会排除
+	// category 55/73，福袋只能由活动专用掉落/领奖流程发放。
 	CarrierItem string `json:"carrier_item"`
 	CarrierQty  int64  `json:"carrier_qty"`
 }
@@ -165,8 +165,10 @@ func (s *Server) lootCarrierItemEligible(ctx context.Context, itemID string) boo
 	if !ok {
 		return false
 	}
-	if !lootWireCategoryEligible(category) {
-		s.log.Warn("礼包载体类别不可物化", "item", itemID, "category", category)
+	// 通用礼包载体与奖励使用同一资格白名单；category 55/73 即使有
+	// 原生 wire 类，也不能作为通用礼包的嵌套载体。活动福袋由专用流程发放。
+	if !lootRewardCategoryEligible(category) {
+		s.log.Warn("礼包载体类别不可发放", "item", itemID, "category", category)
 		return false
 	}
 	return true

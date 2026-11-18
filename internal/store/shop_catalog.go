@@ -362,9 +362,23 @@ func (d *DB) effectiveShopShelf(ctx context.Context, storeID string) (*shopShelf
 		return nil, err
 	}
 	base, source, def, known := resolveShopBase(storeID, catalog, recorded)
-	base, _, err = d.augmentShopShelf(ctx, def, base)
-	if err != nil {
-		return nil, err
+	// Boat-station kind 4 uses common boat tickets: the witness template's
+	// brand is not the station operator brand, so brand filtering would erase
+	// the entire four-ticket shelf.
+	if source == shopShelfSourceKind && len(def.Brands) > 0 && def.Kind != 4 {
+		base, err = d.filterShopShelfByBrands(ctx, def, base)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// An explicit per-store shelf is authoritative. Do not append heuristic
+	// category supplements to it; this preserves exact recorded/curated counts
+	// (e.g. Tunguska's 93 recorded + 2 documented specials, and the 3-item cafe).
+	if len(def.Shelf) == 0 {
+		base, _, err = d.augmentShopShelf(ctx, def, base)
+		if err != nil {
+			return nil, err
+		}
 	}
 	overrides := map[string]shopOverrideValue{}
 	if len(base) > 0 {
@@ -374,12 +388,13 @@ func (d *DB) effectiveShopShelf(ctx context.Context, storeID string) (*shopShelf
 		}
 	}
 	effective := applyShopOverrides(base, overrides)
-	// 补齐货架：历史抓取/内嵌模板缺的新商品（例如 2025 款）在客户端看来是
-	// “无库存”，这里按“同店内已有品类 +（品牌店）同品牌”补上，价格缺失时
-	// 用同类商品中位价估价。
-	effective, _, err = d.augmentShopShelf(ctx, def, effective)
-	if err != nil {
-		return nil, err
+	// 逐店显式货架已是完整、经过核验的清单；再次启发式补齐会把
+	// 同品类但不属于该店的商品塞进来（例如通古斯卡特产店）。
+	if len(def.Shelf) == 0 {
+		effective, _, err = d.augmentShopShelf(ctx, def, effective)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &shopShelfResolution{
 		Base:         base,

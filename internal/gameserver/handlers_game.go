@@ -560,9 +560,42 @@ func hTravel(ctx *Ctx) ([]byte, bool) {
 	}
 	key = travelLevelKey(key)
 	sess := ctx.Sess
+	// 福袋券使用墙钟到期；在任意切图请求前先结算到期状态。
+	sess.Srv.expireLuckyBagSession(sess, time.Now())
+	lockedLuckyBag := false
+	if key == luckyBagMapKey {
+		// 锁内重新读取入场券：避免 keepalive 恰好在“检查有效”与“占位”之间
+		// 将券标记过期，导致过期玩家仍能切入活动地图。
+		sess.Srv.luckyBagMu.Lock()
+		lockedLuckyBag = true
+		_, active, err := sess.Srv.luckyBagSession(sess.pushCtx(), sess.Userid, time.Now())
+		if err != nil {
+			sess.Srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+			ctx.Log.Warn("1/14 读取福袋入场券失败", "err", err)
+			return nil, false
+		}
+		if !active {
+			sess.Srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期或尚未购买")
+			return nil, true
+		}
+		if !sess.Srv.canEnterLuckyBag(sess.Userid) {
+			sess.Srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋地图当前已满，请等待其他玩家退出")
+			return nil, true
+		}
+		defer func() {
+			if lockedLuckyBag {
+				sess.Srv.luckyBagMu.Unlock()
+			}
+		}()
+	}
 	// 凭证地图不再在入口一律拒绝：settleTravel 在同一事务内判断有效
 	// trip/buyout/house 是否免票；无有效凭证时按普通切图费收费，余额不足
-	// 则整体回滚。这样票到期后可以重新付费进入，也不会无扣款绕过切图结算。
+	// 则整体回滚。福袋地图另由上面的 30 min 活动券单独授权。
 	nowUnix := time.Now().Unix()
 	// 预构造只用于确认响应可用，避免扣款后才暴露构造失败。
 	body, err := sess.Srv.buildTravelBodyAt(sess, key, nowUnix)
@@ -617,6 +650,9 @@ func hEnterMap(ctx *Ctx) ([]byte, bool) {
 		requested = firstNonEmptyStr(ctx.Tree)
 	}
 
+	// 先按墙钟处理活动券到期。若离线期间在活动地图内到期，过期处理会
+	// 把持久化位置恢复为购票前地图，再由下面的 1/13 正常恢复。
+	srv.expireLuckyBagSession(sess, time.Now())
 	level, scene, spot := spawnLevelKey, sceneForLevel(spawnLevelKey), int64(0)
 	saved, err := srv.DB.GetPlayerLocation(sess.pushCtx(), uid)
 	if err != nil {
@@ -635,6 +671,67 @@ func hEnterMap(ctx *Ctx) ([]byte, bool) {
 	level = travelLevelKey(level)
 	if scene == "" {
 		scene = sceneForLevel(level)
+	}
+
+	lockedLuckyBag := false
+	if charge && level == luckyBagMapKey {
+		// 与 1/14 一样，在容量锁内复核券状态，避免到期任务与登录入图竞态。
+		srv.luckyBagMu.Lock()
+		lockedLuckyBag = true
+		_, active, err := srv.luckyBagSession(sess.pushCtx(), uid, time.Now())
+		if err != nil {
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+			ctx.Log.Warn("1/13 读取福袋入场券失败", "err", err)
+			return nil, false
+		}
+		if !active {
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期或尚未购买")
+			return nil, true
+		}
+		if !srv.canEnterLuckyBag(uid) {
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋地图当前已满，请等待其他玩家退出")
+			return nil, true
+		}
+		defer func() {
+			if lockedLuckyBag {
+				srv.luckyBagMu.Unlock()
+			}
+		}()
+	} else if !charge && level == luckyBagMapKey {
+		// 登录恢复仍有效的活动地图时也占用 30 人容量；在容量锁内复核券状态，
+		// 满员则恢复到购票前位置，但不撤销仍有效的券。
+		srv.luckyBagMu.Lock()
+		lockedLuckyBag = true
+		bag, active, err := srv.luckyBagSession(sess.pushCtx(), uid, time.Now())
+		if err != nil {
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+			ctx.Log.Warn("1/13 读取福袋恢复位置失败", "err", err)
+			return nil, false
+		}
+		if !active || !srv.canEnterLuckyBag(uid) {
+			if bag != nil && bag.OriginLevelKey != "" && validLevelKey(bag.OriginLevelKey) && bag.OriginLevelKey != luckyBagMapKey {
+				level, scene, spot = bag.OriginLevelKey, bag.OriginScene, bag.OriginSpot
+				if scene == "" {
+					scene = sceneForLevel(level)
+				}
+			} else {
+				level, scene, spot = spawnLevelKey, sceneForLevel(spawnLevelKey), 0
+			}
+			srv.luckyBagMu.Unlock()
+			lockedLuckyBag = false
+		} else {
+			defer func() {
+				if lockedLuckyBag {
+					srv.luckyBagMu.Unlock()
+				}
+			}()
+		}
 	}
 	// 空请求只恢复上次位置；银币票停留没有 access 记录，不能直接用
 	// tripLevelLocked 判断。只有上次地图明确依赖已到期钓鱼游且之后没有
@@ -787,6 +884,19 @@ func hCastPrepare(ctx *Ctx) ([]byte, bool) {
 	if !srv.requireDB(ctx) {
 		return nil, false
 	}
+	if isLuckyBagEventKey(srv.currentLevel(ctx.Sess.Userid)) {
+		srv.expireLuckyBagSession(ctx.Sess, time.Now())
+		_, active, err := srv.luckyBagSession(ctx.Sess.pushCtx(), ctx.Sess.Userid, time.Now())
+		if err != nil {
+			ctx.Log.Warn("福袋地图抛竿前读取入场券失败", "err", err)
+			return nil, false
+		}
+		if !active {
+			ctx.Log.Info("福袋入场券已过期，拒绝抛竿", "uid", ctx.Sess.Userid)
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期，请返回原地图")
+			return nil, true
+		}
+	}
 	guids := deepGUIDs(ctx.Tree)
 	gear := ""
 	if len(guids) > 0 {
@@ -887,6 +997,20 @@ func hCast(ctx *Ctx) ([]byte, bool) {
 	srv := ctx.Sess.Srv
 	if !srv.requireDB(ctx) {
 		return nil, false
+	}
+	// 14/2 可能在客户端跳过 14/1 直接发送；活动券必须在真正抛竿入口再验一次。
+	if isLuckyBagEventKey(srv.currentLevel(ctx.Sess.Userid)) {
+		srv.expireLuckyBagSession(ctx.Sess, time.Now())
+		_, active, err := srv.luckyBagSession(ctx.Sess.pushCtx(), ctx.Sess.Userid, time.Now())
+		if err != nil {
+			ctx.Log.Warn("福袋地图正式抛竿前读取入场券失败", "err", err)
+			return nil, false
+		}
+		if !active {
+			ctx.Log.Info("福袋入场券已过期，拒绝正式抛竿", "uid", ctx.Sess.Userid)
+			ctx.ReplyFailure("System.InvalidOperationException", "福袋入场券已过期，请返回原地图")
+			return nil, true
+		}
 	}
 	// loc/spot：顶层 obj olieodeoaof 第一个非空 str = loc，第二个 u32 存 spot。
 	// 协议注释里该槽典型取值是 0..16 的 float（按 U32 承载位型），
@@ -1633,6 +1757,10 @@ func registerSessionHandlers(d *Dispatch) {
 	d.Register(4, 1, hItemCount)
 	d.Register(4, 4, hItemGUIDs)
 	d.Register(4, 5, hItemDetails)
+	// 4/8 的 handler 在 registerWorldHandlers 中注册；响应契约在此统一声明。
+	d.RegisterResponseContract(4, 8, ResponseContractRule{
+		Kind: proto.KindObj, TypeIDs: []uint32{800}, Classes: []string{"dlbahppbdad"},
+	})
 	d.Register(5, 1, hSkillsGet)
 	d.Register(11, 1, hShortcutSnapshot)
 	d.Register(11, 2, hShortcutBind)

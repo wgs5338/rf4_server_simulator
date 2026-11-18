@@ -121,6 +121,12 @@ func (s *Server) currentPlaceRules(ctx context.Context, uid int64) []placeGearRu
 	if err != nil || loc == nil {
 		return nil
 	}
+	// 福袋活动入口使用 level_lucky_bag；底层惩戒池塘位置登记为 level_ban。
+	// 用户已确认不保留专用鱼竿限制，因此两个活动标识都不套用水域装备规则。
+	// 集中在规则入口，17/7、14/1、14/2 三处校验自动保持一致。
+	if loc.LevelKey == "level_lucky_bag" || loc.LevelKey == "level_ban" {
+		return nil
+	}
 	return restrictionsForLevel(loc.LevelKey)
 }
 

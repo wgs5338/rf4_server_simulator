@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"rf4server/internal/config"
 	"rf4server/internal/logging"
@@ -731,5 +732,98 @@ func TestLoginRestoreExpiredTripWithLaterTicketKeepsMap(t *testing.T) {
 	level, _ := decodeLocator(t, srv, body)
 	if level != target {
 		t.Fatalf("到期后重新买票登录回 %q，期望保留 %q", level, target)
+	}
+}
+
+func decodeTravelMapKey(t *testing.T, srv *Server, body []byte) string {
+	t.Helper()
+	dec, _, err := proto.DecodeValue(body, 0, srv.Table())
+	if err != nil {
+		t.Fatalf("1/14 响应解码失败: %v", err)
+	}
+	if dec.Kind != proto.KindValList || len(dec.Items) < 1 {
+		t.Fatalf("1/14 响应应为含地图树的 vallist，实得 kind=%v items=%d", dec.Kind, len(dec.Items))
+	}
+	dob := dec.Items[0]
+	if dob == nil || dob.Kind != proto.KindObj || dob.Class != "dobfogbcggd" {
+		t.Fatalf("1/14 首项应为 205 地图树，实得 %v", dob)
+	}
+	return dob.Field(0).StrOr()
+}
+
+// 福袋活动使用客户端活动 key level_lucky_bag，但静态地图和惩戒池塘场景
+// 的规范 key 是 level_ban。1/12、1/14、1/13 必须统一归一，不能登录后掉回出生图。
+func TestLuckyBagEventKeyUsesBanPondMap(t *testing.T) {
+	t.Parallel()
+	if got := travelLevelKey("level_lucky_bag"); got != "level_ban" {
+		t.Fatalf("活动 key 归一结果=%q，期望 level_ban", got)
+	}
+	if !validLevelKey("level_lucky_bag") || !validLevelKey("level_ban") {
+		t.Fatal("福袋活动 key 与惩戒池塘规范 key 都应可识别")
+	}
+	if got := placeTravelCost("level_lucky_bag"); got != 0 {
+		t.Fatalf("惩戒池塘地图应保持免费切图，费用=%d", got)
+	}
+
+	db := connectTestDB(t)
+	const uid int64 = 1000015
+	const startSilver int64 = 1234567
+	seedTravelTestPlayer(t, db, uid, startSilver)
+	srv := newLocationTestServer(t, db)
+
+	// 1/14 进入活动地图必须持有有效的 30 min 福袋券；本测试验证 key 归一，
+	// 因此显式建立有效券，不绕过活动地图的入场授权。
+	now := time.Now()
+	if _, err := db.SQL.Exec(`
+		INSERT INTO lucky_bag_session(
+			uid,origin_level_key,origin_scene,origin_spot,expires_at,
+			paid_currency,paid_amount,purchases,purchased_ts,notified_ts)
+		VALUES(?,?,?,?,?,?,?,?,?,0)`,
+		uid, spawnLevelKey, sceneForLevel(spawnLevelKey), 0,
+		float64(now.Add(20*time.Minute).Unix()), "silver", luckyBagSilverPrice, 1,
+		float64(now.Unix())); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1/12 地图读取：响应 205 的规范 key 应为 level_ban。
+	placeCtx := locationTestCtx(locationTestSession(srv, uid),
+		proto.Args524(proto.StrVal("level_lucky_bag")))
+	placeCtx.Main, placeCtx.Sub = 1, 12
+	placeBody, ok := hPlace(placeCtx)
+	if !ok || len(placeBody) == 0 {
+		t.Fatalf("1/12 福袋地图读取失败: ok=%v body=%x", ok, placeBody)
+	}
+	placeTree, _, err := proto.DecodeValue(placeBody, 0, srv.Table())
+	if err != nil || placeTree.Kind != proto.KindObj || placeTree.Class != "dobfogbcggd" {
+		t.Fatalf("1/12 应返回 205 地图对象: err=%v tree=%v", err, placeTree)
+	}
+	if got := placeTree.Field(0).StrOr(); got != "level_ban" {
+		t.Fatalf("1/12 地图 key=%q，期望 level_ban", got)
+	}
+
+	// 1/14 切图：写入数据库的也必须是 level_ban，不能留下活动别名。
+	travelCtx := travelTestCtx(srv, uid, "level_lucky_bag")
+	travelBody, ok := hTravel(travelCtx)
+	if !ok || len(travelBody) == 0 {
+		t.Fatalf("1/14 福袋地图切换失败: ok=%v body=%x", ok, travelBody)
+	}
+	if got := decodeTravelMapKey(t, srv, travelBody); got != "level_ban" {
+		t.Fatalf("1/14 地图 key=%q，期望 level_ban", got)
+	}
+	loc, err := db.GetPlayerLocation(context.Background(), uid)
+	if err != nil || loc == nil || loc.LevelKey != "level_ban" {
+		t.Fatalf("1/14 应持久化 level_ban: loc=%+v err=%v", loc, err)
+	}
+	if got := travelTestSilver(t, db, uid); got != startSilver {
+		t.Fatalf("免费惩戒池塘切图不应扣银币: silver=%d want=%d", got, startSilver)
+	}
+
+	// 1/13 登录恢复：应从上次惩戒池塘位置继续进入，不回出生图。
+	enterBody, ok := hEnterMap(locationTestCtx(locationTestSession(srv, uid), proto.Args524()))
+	if !ok || len(enterBody) == 0 {
+		t.Fatalf("1/13 恢复惩戒池塘失败: ok=%v body=%x", ok, enterBody)
+	}
+	if got, _ := decodeLocator(t, srv, enterBody); got != "level_ban" {
+		t.Fatalf("1/13 恢复地图=%q，期望 level_ban", got)
 	}
 }

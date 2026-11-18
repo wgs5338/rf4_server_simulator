@@ -23,7 +23,7 @@ func (f *Field) HasU16() bool { return f.Num != nil }
 func (f *Field) StrPtr() *string { return f.Str }
 
 // StrOr null 时返回 ""。
-func (f *Field) StrOr() string {
+func (f Field) StrOr() string {
 	if f.Str == nil {
 		return ""
 	}
@@ -31,7 +31,7 @@ func (f *Field) StrOr() string {
 }
 
 // GuidHex GUID16/OPTGUID 的 hex（OPTGUID 未设置时返回 ""）。
-func (f *Field) GuidHex() string { return f.Hex }
+func (f Field) GuidHex() string { return f.Hex }
 
 // HasGuid OPTGUID 是否已设置。
 func (f *Field) HasGuid() bool { return f.Hex != "" }

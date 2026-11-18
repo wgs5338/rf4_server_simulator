@@ -216,6 +216,11 @@ func hItemUse(ctx *Ctx) ([]byte, bool) {
 	if body, handled := srv.useSkillBook(ctx); handled {
 		return body, true
 	}
+	// 2023 福袋属于 category-73；必须在通用 4/8 背包快照之前拦截，
+	// 否则客户端点击"使用"只会收到原福袋快照，奖励永远不会入账。
+	if body, handled := srv.useLuckyBag(ctx); handled {
+		return body, true
+	}
 	if body, handled := srv.useGiftBox(ctx); handled {
 		return body, true
 	}
@@ -539,6 +544,10 @@ func hPlaceTripTx(ctx *Ctx) ([]byte, bool) {
 	}
 	uid := ctx.Sess.Userid
 	place, gold, price := parsePlaceTripArgs(ctx.Tree)
+	// 福袋活动使用独立的墙钟入场券，不进入普通钓鱼游在线计时状态。
+	if isLuckyBagEventKey(place) {
+		return srv.buyLuckyBagTicket(ctx, place, gold, price)
+	}
 	durSec := srv.currentTripDurationSec(ctx.Sess.pushCtx())
 	if !validLevelKey(place) || price <= 0 {
 		ctx.Log.Warn("3/38 参数无效", "place", place, "gold", gold, "price", price)

@@ -233,6 +233,29 @@ func (s *Server) BuildProfile307W(ctx context.Context, uid int64, wNow int64) (*
 			4: proto.U32(uint32(start)),
 		}))
 	}
+	// 福袋入场券使用独立的墙钟 expires_at；f23 仍复用客户端已识别的
+	// 1506 voucher 结构，活动 key 保留 level_lucky_bag 供客户端 LuckyBag hook 匹配。
+	if bag, bagErr := s.DB.GetLuckyBagSession(ctx, uid); bagErr == nil && bag != nil {
+		nowUnix := float64(time.Now().Unix())
+		if bag.ExpiresAt > nowUnix && bag.NotifiedTS == 0 {
+			remainGameMin := int64((bag.ExpiresAt - nowUnix) * 24 / 60)
+			if remainGameMin < 0 {
+				remainGameMin = 0
+			}
+			if remainGameMin > math.MaxUint32 {
+				remainGameMin = math.MaxUint32
+			}
+			vouchers = append(vouchers, wiregen.MustMakeObj("hajlpdpmnfe", map[int]*proto.Value{
+				0: proto.StrVal(luckyBagEventKey),
+				1: proto.U32(uint32(bag.Purchases)),
+				2: proto.U32(uint32(remainGameMin)),
+				3: proto.U32(1),
+				4: proto.U32(uint32(wNow + 3)),
+			}))
+		}
+	} else if bagErr != nil {
+		s.log.Warn("福袋入场券档案读取失败", "uid", uid, "err", bagErr)
+	}
 
 	// f16=kgpgemhhiik 是资料页奖杯鱼种数（trophy/trph），不是布尔值。客户端
 	// 把 f16 拷进 ifbfdldbana.gebeadddmlp；RUIUserInfoWidget（等级旁星号）

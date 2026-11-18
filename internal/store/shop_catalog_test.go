@@ -486,3 +486,95 @@ func TestCafeStoreShelfComesFromStoreDefinition(t *testing.T) {
 		t.Fatalf("咖啡馆货架来源=%q want=%q", shelf.Source, shopShelfSourceStore)
 	}
 }
+
+
+// TestBanFoodStoreUsesItemDefinitionKindFilter verifies the special
+// ny_bazaar_ban store can see items whose subtype is stored in item_def.kind.
+// These rows have a generic item_catalog.kind and an empty item_def.brand.
+func TestBanFoodStoreUsesItemDefinitionKindFilter(t *testing.T) {
+	db := openShopCatalogTestDB(t)
+	ctx := context.Background()
+	catalog, err := embeddedShopKindCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, ok := catalog.Stores["ny_bazaar_ban"]
+	if !ok || def.MapKey != "level_ban" || len(def.Brands) != 1 || def.Brands[0] != "banfood" {
+		t.Fatalf("惩戒池塘新年集市定义不符: %+v", def)
+	}
+	if _, err := db.SQL.Exec(`
+		INSERT INTO item_def(numeric_id,item_id,category,kind,brand,attrs_json) VALUES
+			(992001,'test_base_food',26,'food','','{}'),
+			(992002,'test_banfood_special',26,'banfood','','{}'),
+			(992003,'test_unrelated_food',26,'food','','{}');
+		INSERT INTO item_catalog(item_id,name,name_zh,kind,numeric_id) VALUES
+			('test_base_food','Base Food','基础食品','misc',992001),
+			('test_banfood_special','Ban Food','活动食品','misc',992002),
+			('test_unrelated_food','Other Food','其他食品','misc',992003);
+		INSERT INTO item_price(item_id,silver,gold,stock) VALUES
+			('test_base_food',100,0,10),
+			('test_banfood_special',50,0,10),
+			('test_unrelated_food',60,0,10);
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	base := []*ShopPrice{{ItemID: "test_base_food", Silver: 100, Stock: 10}}
+	got, added, err := db.augmentShopShelf(ctx, def, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 1 || len(got) != 2 {
+		t.Fatalf("banfood 专属货架补齐数=%d rows=%+v，期望只增加 1 件", added, got)
+	}
+	findShopPrice(t, got, "test_banfood_special")
+	for _, row := range got {
+		if row.ItemID == "test_unrelated_food" {
+			t.Fatal("不属于 banfood 的普通食品不应进入专属货架")
+		}
+	}
+}
+
+
+// TestBanFoodStoreUsesOnlyStaticBanFoodItems verifies the real Ban Pond shop,
+// not only synthetic rows: its generic kind-1 fallback must not leak ordinary
+// grocery items, and all static banfood products (including pack sizes) appear.
+func TestBanFoodStoreUsesOnlyStaticBanFoodItems(t *testing.T) {
+	db, err := OpenWithStatic(filepath.Join(t.TempDir(), "banfood-static.db"),
+		filepath.Join("..", "..", "server_data", "static.sqlite3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	rows, err := db.ShopItems(ctx, "ny_bazaar_ban")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 12 {
+		t.Fatalf("惩戒池塘新年集市应只显示 12 件 banfood 商品，实际 %d 件: %+v", len(rows), rows)
+	}
+	for _, row := range rows {
+		var kind string
+		if err := db.SQL.QueryRowContext(ctx,
+			`SELECT kind FROM item_def WHERE item_id=?`, row.ItemID).Scan(&kind); err != nil {
+			t.Fatalf("读取 %s 的 item_def.kind: %v", row.ItemID, err)
+		}
+		if kind != "banfood" {
+			t.Fatalf("惩戒池塘货架混入普通食品: item=%s kind=%s", row.ItemID, kind)
+		}
+		if row.Silver <= 0 || row.Stock <= 0 {
+			t.Fatalf("banfood 商品未获得有效价格/库存: %+v", row)
+		}
+	}
+	for _, unrelated := range []string{"loaf_01", "ff_pork_canned", "ff_saira_canned"} {
+		for _, row := range rows {
+			if row.ItemID == unrelated {
+				t.Fatalf("惩戒池塘新年集市不应出现普通食品 %s", unrelated)
+			}
+		}
+	}
+}
